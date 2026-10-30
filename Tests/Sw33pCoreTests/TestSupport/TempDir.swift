@@ -4,9 +4,11 @@ final class TempDir {
     let url: URL
 
     init() throws {
-        url = FileManager.default.temporaryDirectory
+        let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("sw33p-tests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let resolved = base.resolvingSymlinksInPath().standardizedFileURL
+        url = URL(fileURLWithPath: resolved.path, isDirectory: false)
     }
 
     deinit {

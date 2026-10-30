@@ -123,5 +123,10 @@ final class DirectorySizerTests: XCTestCase {
         let size = DirectorySizer().size(of: dir.url)
 
         XCTAssertGreaterThanOrEqual(size?.unreadableCount ?? 0, 1)
+        XCTAssertTrue(
+            size?.unreadableURLs.contains {
+                $0.standardizedPath == locked.standardizedPath
+            } == true
+        )
     }
 }

@@ -3,15 +3,22 @@ import Foundation
 public struct ScanEngine: Sendable {
     private let configuration: ScanConfiguration
 
+    /// Internal test hook; not part of the public API.
+    var eventObserver: (@Sendable (ScanEvent) -> Void)?
+
     public init(configuration: ScanConfiguration) {
         self.configuration = configuration
     }
 
     public func scan() -> AsyncThrowingStream<ScanEvent, Error> {
-        AsyncThrowingStream { continuation in
+        let observer = eventObserver
+        return AsyncThrowingStream { continuation in
             let task = Task.detached(priority: .utility) {
                 do {
-                    try await self.run { continuation.yield($0) }
+                    try await self.run { event in
+                        observer?(event)
+                        continuation.yield(event)
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
@@ -22,7 +29,7 @@ public struct ScanEngine: Sendable {
     }
 
     private func run(yield: @escaping @Sendable (ScanEvent) -> Void) async throws {
-        let root = configuration.root.resolvingSymlinksInPath().standardizedFileURL
+        let root = configuration.root.canonicalScanURL
         guard let rootStat = FileStatReader.stat(root) else {
             throw ScanError.rootNotFound(configuration.root)
         }
@@ -39,10 +46,11 @@ public struct ScanEngine: Sendable {
             exclusions: DefaultExclusions.urls(home: configuration.knownLocations.home)
                 + configuration.exclusions
         )
-        let state = WalkState(configuration: configuration, context: context, root: root)
+        let state = WalkState(configuration: configuration, context: context)
         state.scanRoot(yield: yield)
 
-        if state.cancelled {
+        if state.cancelled || isCancelled() {
+            state.cancelled = true
             yield(.finished(state.summary(cancelled: true)))
             return
         }
@@ -52,7 +60,7 @@ public struct ScanEngine: Sendable {
         }
 
         for detector in configuration.detectors {
-            if configuration.shouldCancel() {
+            if isCancelled() {
                 state.cancelled = true
                 break
             }
@@ -62,8 +70,12 @@ public struct ScanEngine: Sendable {
             }
         }
 
-        let summary = state.summary(cancelled: state.cancelled)
+        let summary = state.summary(cancelled: state.cancelled || isCancelled())
         yield(.finished(summary))
+    }
+
+    private func isCancelled() -> Bool {
+        Task.isCancelled || configuration.shouldCancel()
     }
 }
 
@@ -71,7 +83,6 @@ private final class WalkState {
     private struct SizedCandidate {
         let candidate: JunkCandidate
         let size: DirectorySize
-        let directoryModified: Date
     }
 
     private struct Activity {
@@ -89,7 +100,6 @@ private final class WalkState {
 
     let configuration: ScanConfiguration
     let context: ScanContext
-    let root: URL
     var cancelled = false
     private var items: [JunkItem] = []
     private var issueCount = 0
@@ -99,15 +109,18 @@ private final class WalkState {
     private var lastProgress = ContinuousClock.now
     private let started = Date()
 
-    init(configuration: ScanConfiguration, context: ScanContext, root: URL) {
+    init(configuration: ScanConfiguration, context: ScanContext) {
         self.configuration = configuration
         self.context = context
-        self.root = root
     }
 
     func scanRoot(yield: @escaping @Sendable (ScanEvent) -> Void) {
         var activities: [Activity] = []
-        walk(root, activities: &activities, yield: yield)
+        walk(context.root, activities: &activities, yield: yield)
+    }
+
+    private func isCancelled() -> Bool {
+        Task.isCancelled || configuration.shouldCancel()
     }
 
     private func walk(
@@ -115,7 +128,7 @@ private final class WalkState {
         activities: inout [Activity],
         yield: @escaping @Sendable (ScanEvent) -> Void
     ) {
-        if cancelled || configuration.shouldCancel() {
+        if cancelled || isCancelled() {
             cancelled = true
             return
         }
@@ -147,31 +160,38 @@ private final class WalkState {
         }
 
         for name in names {
-            if cancelled || configuration.shouldCancel() {
+            if cancelled || isCancelled() {
                 cancelled = true
                 return
             }
             let url = directory.appendingPathComponent(name)
             guard let stat = FileStatReader.stat(url) else { continue }
             if stat.isSymlink { continue }
-            if name == ".git" || context.isExcluded(url) { continue }
+            let components = url.pathComponents
+            if name == ".git" || context.isExcluded(components: components) { continue }
 
             if stat.isDirectory {
                 if let match = match(url: url, name: name) {
                     switch match {
                     case .candidate(let candidate):
+                        let shouldCancel = configuration.shouldCancel
                         guard let size = DirectorySizer().size(
                             of: url,
-                            shouldCancel: configuration.shouldCancel
+                            shouldCancel: { Task.isCancelled || shouldCancel() }
                         ) else {
                             cancelled = true
                             return
                         }
-                        issueCount += size.unreadableCount
+                        for unreadable in size.unreadableURLs {
+                            issueCount += 1
+                            yield(.issue(ScanIssue(
+                                url: unreadable,
+                                message: "Could not read this folder. Full Disk Access may help."
+                            )))
+                        }
                         let sized = SizedCandidate(
                             candidate: candidate,
-                            size: size,
-                            directoryModified: stat.modified
+                            size: size
                         )
                         if let project = candidate.projectURL,
                            let index = activities.lastIndex(where: {
@@ -186,7 +206,9 @@ private final class WalkState {
                     case .skip(let note):
                         add(note)
                     }
-                } else if configuration.knownLocations.shouldDescend(into: url) {
+                } else if configuration.knownLocations.shouldDescend(
+                    components: components
+                ) {
                     walk(url, activities: &activities, yield: yield)
                 }
             } else if stat.isRegularFile {
@@ -214,7 +236,10 @@ private final class WalkState {
         _ activity: Activity,
         yield: @escaping @Sendable (ScanEvent) -> Void
     ) {
-        guard !cancelled else { return }
+        guard !cancelled, !isCancelled() else {
+            cancelled = true
+            return
+        }
         var merged: [String: (candidate: JunkCandidate, bytes: Int64, count: Int, urls: [URL])] = [:]
         var singles: [SizedCandidate] = []
 
@@ -250,7 +275,6 @@ private final class WalkState {
             items.append(item)
             totalBytes += item.allocatedBytes
             yield(.discovered(item))
-            yield(.progress(progress(currentPath: item.url.path)))
         }
     }
 
@@ -269,7 +293,6 @@ private final class WalkState {
         items.append(item)
         totalBytes += item.allocatedBytes
         yield(.discovered(item))
-        yield(.progress(progress(currentPath: item.url.path)))
     }
 
     private func makeItem(

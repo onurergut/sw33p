@@ -3,12 +3,14 @@ import Foundation
 public struct DirectorySize: Hashable, Sendable {
     public let allocatedBytes: Int64
     public let fileCount: Int
-    public let unreadableCount: Int
+    public let unreadableURLs: [URL]
 
-    public init(allocatedBytes: Int64, fileCount: Int, unreadableCount: Int = 0) {
+    public var unreadableCount: Int { unreadableURLs.count }
+
+    public init(allocatedBytes: Int64, fileCount: Int, unreadableURLs: [URL] = []) {
         self.allocatedBytes = allocatedBytes
         self.fileCount = fileCount
-        self.unreadableCount = unreadableCount
+        self.unreadableURLs = unreadableURLs
     }
 }
 
@@ -25,13 +27,13 @@ public struct DirectorySizer: Sendable {
         var seen = Set<FileIdentity>()
         var bytes: Int64 = 0
         var count = 0
-        var unreadable = 0
+        var unreadable: [URL] = []
         var stack = [url]
 
         while let directory = stack.popLast() {
             if shouldCancel() { return nil }
             guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-                unreadable += 1
+                unreadable.append(directory)
                 continue
             }
             for name in names {
@@ -50,7 +52,7 @@ public struct DirectorySizer: Sendable {
                 }
             }
         }
-        return DirectorySize(allocatedBytes: bytes, fileCount: count, unreadableCount: unreadable)
+        return DirectorySize(allocatedBytes: bytes, fileCount: count, unreadableURLs: unreadable)
     }
 
     private struct FileIdentity: Hashable {

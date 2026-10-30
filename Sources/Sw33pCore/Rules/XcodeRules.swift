@@ -13,7 +13,7 @@ public struct XcodeDerivedDataRule: JunkRule {
     private let root: URL
 
     public init(knownLocations: KnownLocations) {
-        root = knownLocations.xcodeDerivedData.standardizedFileURL
+        root = knownLocations.xcodeDerivedData
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
@@ -51,7 +51,7 @@ public struct XcodeArchivesRule: JunkRule {
     )
 
     public init(knownLocations: KnownLocations) {
-        root = knownLocations.xcodeArchives.standardizedFileURL
+        root = knownLocations.xcodeArchives
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
@@ -85,7 +85,7 @@ public struct XcodeDeviceSupportRule: JunkRule {
     )
 
     public init(knownLocations: KnownLocations) {
-        roots = knownLocations.xcodeDeviceSupport.map(\.standardizedFileURL)
+        roots = knownLocations.xcodeDeviceSupport
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {

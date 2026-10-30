@@ -4,9 +4,9 @@ import XCTest
 final class KnownLocationsTests: XCTestCase {
     func testKnownCacheRootIsRecognizedAndOutsideIsNot() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
-        let swiftPM = home.appendingPathComponent("Library/Caches/org.swift.swiftpm")
+        let locations = KnownLocations(home: temp.url)
+        let home = locations.home
+        let swiftPM = locations.swiftPM
         let other = home.appendingPathComponent("Library/Caches/com.example.other")
 
         XCTAssertTrue(locations.contains(swiftPM))
@@ -16,8 +16,8 @@ final class KnownLocationsTests: XCTestCase {
 
     func testContainsIsComponentBasedNotStringPrefix() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
+        let locations = KnownLocations(home: temp.url)
+        let home = locations.home
         let tricky = home.appendingPathComponent("Library/Caches/CocoaPodsExtra")
 
         XCTAssertFalse(locations.contains(tricky))
@@ -25,9 +25,8 @@ final class KnownLocationsTests: XCTestCase {
 
     func testDepthLimitsKeepXcodeSubtreeShallow() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
-        let derived = home.appendingPathComponent("Library/Developer/Xcode/DerivedData")
+        let locations = KnownLocations(home: temp.url)
+        let derived = locations.xcodeDerivedData
         let project = derived.appendingPathComponent("App-hash")
         let deep = project.appendingPathComponent("Build")
 
@@ -38,24 +37,21 @@ final class KnownLocationsTests: XCTestCase {
 
     func testDepthZeroRootsOutsideLibraryAreNotDescendedInto() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
+        let locations = KnownLocations(home: temp.url)
 
-        for path in [".npm/_cacache", ".cache/yarn", ".pnpm-store"] {
-            let root = home.appendingPathComponent(path)
-            XCTAssertFalse(locations.shouldDescend(into: root), path)
+        for root in locations.npmCacheRoots {
+            XCTAssertFalse(locations.shouldDescend(into: root), root.path)
             XCTAssertFalse(
                 locations.shouldDescend(into: root.appendingPathComponent("inside")),
-                path
+                root.path
             )
         }
     }
 
     func testArchivesDepthAllowsTwoLevels() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
-        let archives = home.appendingPathComponent("Library/Developer/Xcode/Archives")
+        let locations = KnownLocations(home: temp.url)
+        let archives = locations.xcodeArchives
         let dated = archives.appendingPathComponent("2024-01-01")
 
         XCTAssertTrue(locations.shouldDescend(into: archives))
@@ -65,9 +61,10 @@ final class KnownLocationsTests: XCTestCase {
 
     func testDeviceSupportDepthAllowsOneLevel() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
-        let support = home.appendingPathComponent("Library/Developer/Xcode/iOS DeviceSupport")
+        let locations = KnownLocations(home: temp.url)
+        let support = locations.xcodeDeviceSupport.first {
+            $0.lastPathComponent == "iOS DeviceSupport"
+        }!
 
         XCTAssertTrue(locations.shouldDescend(into: support))
         XCTAssertFalse(locations.shouldDescend(into: support.appendingPathComponent("17.0")))
@@ -81,8 +78,8 @@ final class KnownLocationsTests: XCTestCase {
 
     func testAncestorOfKnownRootIsDescendedInto() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
+        let locations = KnownLocations(home: temp.url)
+        let home = locations.home
 
         XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent("Library/Developer")))
         XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent("Library/Developer/Xcode")))
@@ -92,8 +89,8 @@ final class KnownLocationsTests: XCTestCase {
 
     func testUnrelatedLibraryAndOutsidePaths() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
+        let locations = KnownLocations(home: temp.url)
+        let home = locations.home
 
         XCTAssertFalse(locations.shouldDescend(into: home.appendingPathComponent("Library/Application Support")))
         XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent("Documents")))
@@ -101,8 +98,7 @@ final class KnownLocationsTests: XCTestCase {
 
     func testEveryExposedRootIsConsistent() throws {
         let temp = try TempDir()
-        let home = temp.url
-        let locations = KnownLocations(home: home)
+        let locations = KnownLocations(home: temp.url)
         let roots =
             locations.allRoots
             + [locations.swiftPM, locations.cocoaPods, locations.xcodeDerivedData, locations.xcodeArchives]

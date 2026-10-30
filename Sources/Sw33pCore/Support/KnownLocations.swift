@@ -2,51 +2,74 @@ import Foundation
 
 public struct KnownLocations: Sendable {
     public let home: URL
-    private let depths: [URL: Int]
+
+    private let roots: [Root]
+    private let rootURLs: [URL]
+    private let urlsByRelativePath: [String: URL]
+    private let depthByPath: [String: Int]
+    private let libraryComponents: [String]
+
+    private struct Root: Sendable {
+        let url: URL
+        let components: [String]
+        let depth: Int
+    }
 
     private static let deviceSupportPlatforms = ["iOS", "watchOS", "tvOS", "xrOS", "visionOS"]
 
-    private static let relativeDepths: [String: Int] = {
-        var values: [String: Int] = [
-            "Library/Caches/org.swift.swiftpm": 0,
-            "Library/Caches/CocoaPods": 0,
-            "Library/Caches/Yarn": 0,
-            "Library/Caches/pnpm": 0,
-            ".cache/yarn": 0,
-            ".npm/_cacache": 0,
-            "Library/pnpm/store": 0,
-            ".pnpm-store": 0,
-            "Library/Developer/Xcode/DerivedData": 1,
-            "Library/Developer/Xcode/Archives": 2,
-        ]
-        for name in deviceSupportPlatforms {
-            values["Library/Developer/Xcode/\(name) DeviceSupport"] = 1
-        }
-        return values
-    }()
+    private static let relativeDepths: [(path: String, depth: Int)] = [
+        ("Library/Caches/org.swift.swiftpm", 0),
+        ("Library/Caches/CocoaPods", 0),
+        ("Library/Caches/Yarn", 0),
+        ("Library/Caches/pnpm", 0),
+        (".cache/yarn", 0),
+        (".npm/_cacache", 0),
+        ("Library/pnpm/store", 0),
+        (".pnpm-store", 0),
+        ("Library/Developer/Xcode/DerivedData", 1),
+        ("Library/Developer/Xcode/Archives", 2),
+    ]
 
     public init(home: URL) {
-        self.home = home.standardizedFileURL
-        var values: [URL: Int] = [:]
-        for (path, depth) in Self.relativeDepths {
-            values[self.home.appendingPathComponent(path)] = depth
+        let canonicalHome = home.canonicalScanURL
+        self.home = canonicalHome
+
+        var roots: [Root] = []
+        var urlsByRelativePath: [String: URL] = [:]
+        var depths: [String: Int] = [:]
+
+        func add(root relativePath: String, depth: Int) {
+            let url = canonicalHome.appendingPathComponent(relativePath).canonicalScanURL
+            let path = url.path
+            guard depths[path] == nil else { return }
+            depths[path] = depth
+            urlsByRelativePath[relativePath] = url
+            roots.append(Root(url: url, components: url.pathComponents, depth: depth))
         }
-        depths = values
+
+        for entry in Self.relativeDepths {
+            add(root: entry.path, depth: entry.depth)
+        }
+        for platform in Self.deviceSupportPlatforms {
+            add(root: "Library/Developer/Xcode/\(platform) DeviceSupport", depth: 1)
+        }
+
+        self.roots = roots
+        self.rootURLs = roots.map(\.url).sorted { $0.path < $1.path }
+        self.urlsByRelativePath = urlsByRelativePath
+        self.depthByPath = depths
+        self.libraryComponents = canonicalHome.appendingPathComponent("Library").pathComponents
     }
 
-    private func root(_ relativePath: String) -> URL {
-        home.appendingPathComponent(relativePath)
-    }
+    public var allRoots: [URL] { rootURLs }
 
-    public var allRoots: [URL] { depths.keys.sorted { $0.path < $1.path } }
-
-    public var swiftPM: URL { root("Library/Caches/org.swift.swiftpm") }
-    public var cocoaPods: URL { root("Library/Caches/CocoaPods") }
-    public var xcodeDerivedData: URL { root("Library/Developer/Xcode/DerivedData") }
-    public var xcodeArchives: URL { root("Library/Developer/Xcode/Archives") }
+    public var swiftPM: URL { url("Library/Caches/org.swift.swiftpm") }
+    public var cocoaPods: URL { url("Library/Caches/CocoaPods") }
+    public var xcodeDerivedData: URL { url("Library/Developer/Xcode/DerivedData") }
+    public var xcodeArchives: URL { url("Library/Developer/Xcode/Archives") }
     public var xcodeDeviceSupport: [URL] {
         Self.deviceSupportPlatforms.map {
-            root("Library/Developer/Xcode/\($0) DeviceSupport")
+            url("Library/Developer/Xcode/\($0) DeviceSupport")
         }
     }
     public var npmCacheRoots: [URL] {
@@ -57,38 +80,48 @@ public struct KnownLocations: Sendable {
             "Library/pnpm/store",
             ".pnpm-store",
             "Library/Caches/pnpm",
-        ].map(root)
+        ].map(url)
+    }
+
+    private func url(_ relativePath: String) -> URL {
+        urlsByRelativePath[relativePath]!
     }
 
     public func contains(_ url: URL) -> Bool {
-        allRoots.contains { url.isDescendant(of: $0) }
+        let components = url.canonicalScanURL.pathComponents
+        return roots.contains { Self.hasPrefix(components, $0.components) }
     }
 
     public func isKnownRoot(_ url: URL) -> Bool {
-        depths.keys.contains { $0.standardizedPath == url.standardizedPath }
+        depthByPath[url.canonicalScanURL.path] != nil
     }
 
     public func maxDepth(forRoot url: URL) -> Int? {
-        depths.first { $0.key.standardizedPath == url.standardizedPath }?.value
+        depthByPath[url.canonicalScanURL.path]
     }
 
     public func shouldDescend(into url: URL) -> Bool {
-        if let root = depths.keys.first(where: { url.standardizedPath == $0.standardizedPath }) {
-            return (depths[root] ?? 0) > 0
-        }
-        if let root = depths.keys.first(where: { url.isDescendant(of: $0) }) {
-            let depth = relativeDepth(of: url, below: root)
-            return depth < (depths[root] ?? 0)
-        }
-        if allRoots.contains(where: { $0.isDescendant(of: url) }) {
-            return true
-        }
-        let library = home.appendingPathComponent("Library", isDirectory: true)
-        return !url.isDescendant(of: library)
+        shouldDescend(components: url.canonicalScanURL.pathComponents)
     }
 
-    private func relativeDepth(of url: URL, below root: URL) -> Int {
-        let rootCount = root.standardizedFileURL.pathComponents.count
-        return max(0, url.standardizedFileURL.pathComponents.count - rootCount)
+    func shouldDescend(components: [String]) -> Bool {
+        for root in roots where components == root.components {
+            return root.depth > 0
+        }
+        for root in roots where Self.hasPrefix(components, root.components) {
+            let relativeDepth = components.count - root.components.count
+            return relativeDepth < root.depth
+        }
+        for root in roots where Self.hasPrefix(root.components, components) {
+            return true
+        }
+        if Self.hasPrefix(components, libraryComponents) {
+            return false
+        }
+        return true
+    }
+
+    private static func hasPrefix(_ components: [String], _ prefix: [String]) -> Bool {
+        components.count >= prefix.count && components.prefix(prefix.count).elementsEqual(prefix)
     }
 }

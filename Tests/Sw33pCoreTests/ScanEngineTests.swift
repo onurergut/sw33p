@@ -1,7 +1,27 @@
+import Foundation
 import XCTest
 @testable import Sw33pCore
 
 final class ScanEngineTests: XCTestCase {
+    private func collect(
+        _ engine: ScanEngine
+    ) async throws -> (items: [JunkItem], notes: [ScanNote], issues: [ScanIssue], summary: ScanSummary) {
+        var items: [JunkItem] = []
+        var notes: [ScanNote] = []
+        var issues: [ScanIssue] = []
+        var summary: ScanSummary?
+        for try await event in engine.scan() {
+            switch event {
+            case .discovered(let item): items.append(item)
+            case .note(let note): notes.append(note)
+            case .issue(let issue): issues.append(issue)
+            case .finished(let value): summary = value
+            case .progress: break
+            }
+        }
+        return (items, notes, issues, try XCTUnwrap(summary))
+    }
+
     private func scan(
         root: URL,
         home: URL? = nil,
@@ -18,20 +38,26 @@ final class ScanEngineTests: XCTestCase {
             shouldCancel: shouldCancel,
             progressInterval: .zero
         )
-        var items: [JunkItem] = []
-        var notes: [ScanNote] = []
-        var issues: [ScanIssue] = []
-        var summary: ScanSummary?
-        for try await event in ScanEngine(configuration: configuration).scan() {
-            switch event {
-            case .discovered(let item): items.append(item)
-            case .note(let note): notes.append(note)
-            case .issue(let issue): issues.append(issue)
-            case .finished(let value): summary = value
-            case .progress: break
-            }
-        }
-        return (items, notes, issues, try XCTUnwrap(summary))
+        return try await collect(ScanEngine(configuration: configuration))
+    }
+
+    private func configuration(
+        root: URL,
+        rules: [any JunkRule] = [],
+        detectors: [any MaintenanceDetector] = [],
+        exclusions: [URL] = [],
+        home: URL? = nil,
+        shouldCancel: @escaping @Sendable () -> Bool = { false }
+    ) -> ScanConfiguration {
+        ScanConfiguration(
+            root: root,
+            exclusions: exclusions,
+            knownLocations: KnownLocations(home: home ?? root),
+            rules: rules,
+            detectors: detectors,
+            shouldCancel: shouldCancel,
+            progressInterval: .zero
+        )
     }
 
     func testFindsNodeModulesWithProjectAndActivity() async throws {
@@ -91,6 +117,41 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(result.items[0].url.path.contains("included"))
     }
 
+    func testCanonicalRootHonorsAliasedExclusionAndFindsAliasedKnownCache() async throws {
+        let temp = try TempDir()
+        let real = try temp.mkdir("real")
+        try temp.mkdir("real/sub")
+        try FileManager.default.createSymbolicLink(
+            at: temp.url.appendingPathComponent("alias"),
+            withDestinationURL: real
+        )
+
+        let locations = KnownLocations(home: real.appendingPathComponent("sub"))
+        let cache = locations.swiftPM
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try Data(repeating: 0, count: 4096).write(to: cache.appendingPathComponent("data"))
+
+        try temp.write("real/sub/excluded/app/package.json")
+        try temp.mkdir("real/sub/excluded/app/node_modules")
+        try temp.write("real/sub/excluded/app/node_modules/x.js", bytes: 10)
+        try temp.write("real/sub/included/app/package.json")
+        try temp.mkdir("real/sub/included/app/node_modules")
+        try temp.write("real/sub/included/app/node_modules/x.js", bytes: 10)
+
+        let scanRoot = temp.url.appendingPathComponent("alias/sub")
+        let aliasExclusion = temp.url.appendingPathComponent("alias/sub/excluded")
+
+        let result = try await scan(root: scanRoot, home: scanRoot, exclusions: [aliasExclusion])
+
+        XCTAssertFalse(result.items.contains { $0.url.path.contains("/excluded/") })
+        let nodeModules = result.items.filter { $0.category == .nodeModules }
+        XCTAssertEqual(nodeModules.count, 1)
+        XCTAssertTrue(nodeModules[0].url.path.contains("/included/"))
+        let cacheItem = try XCTUnwrap(result.items.first { $0.category == .swiftPM })
+        XCTAssertEqual(cacheItem.validation, .knownRoot(cache))
+        XCTAssertNil(cacheItem.projectURL)
+    }
+
     func testUnreadableFolderIsReportedAndScanContinues() async throws {
         let temp = try TempDir()
         let locked = try temp.mkdir("locked")
@@ -113,9 +174,38 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(result.items.count, 1)
     }
 
+    func testUnreadableDirectoryInsideCandidateIsReportedAndUndercountVisible() async throws {
+        let temp = try TempDir()
+        try temp.write("app/package.json")
+        try temp.write("app/node_modules/ok.js", bytes: 10)
+        let locked = try temp.mkdir("app/node_modules/locked")
+        try temp.write("app/node_modules/locked/hidden.js", bytes: 4096)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0],
+            ofItemAtPath: locked.path
+        )
+        defer {
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o755],
+                ofItemAtPath: locked.path
+            )
+        }
+
+        let result = try await scan(root: temp.url)
+
+        let item = try XCTUnwrap(result.items.first { $0.category == .nodeModules })
+        XCTAssertEqual(item.fileCount, 1, "Files in the unreadable subtree cannot be counted")
+        XCTAssertEqual(
+            result.issues.filter { $0.url.standardizedPath == locked.standardizedPath }.count,
+            1
+        )
+        XCTAssertGreaterThanOrEqual(result.summary.unreadableCount, 1)
+    }
+
     func testKnownCacheIsFoundWithoutProject() async throws {
         let home = try TempDir()
-        let cache = home.url.appendingPathComponent("Library/Caches/org.swift.swiftpm")
+        let locations = KnownLocations(home: home.url)
+        let cache = locations.swiftPM
         try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         try Data(repeating: 0, count: 4096).write(to: cache.appendingPathComponent("data"))
 
@@ -140,6 +230,34 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(pycache[0].projectURL?.lastPathComponent, "py")
     }
 
+    func testNestedProjectActivityAttribution() async throws {
+        let temp = try TempDir()
+        let repoDate = Date(timeIntervalSinceNow: -100 * 86_400)
+        let nestedDate = Date(timeIntervalSinceNow: -50 * 86_400)
+        let siblingDate = Date(timeIntervalSinceNow: -10 * 86_400)
+
+        try temp.write("repo/package.json", modified: repoDate)
+        try temp.write("repo/packages/a/package.json", modified: nestedDate)
+        try temp.write("repo/packages/b/index.js", modified: siblingDate)
+        try temp.mkdir("repo/node_modules")
+        try temp.write("repo/node_modules/new.js", bytes: 10, modified: Date())
+        try temp.mkdir("repo/packages/a/node_modules")
+        try temp.write("repo/packages/a/node_modules/new.js", bytes: 10, modified: Date())
+
+        let result = try await scan(root: temp.url)
+
+        let nodeModules = result.items.filter { $0.category == .nodeModules }
+        XCTAssertEqual(nodeModules.count, 2)
+        let repoItem = try XCTUnwrap(nodeModules.first {
+            $0.projectURL?.lastPathComponent == "repo"
+        })
+        let nestedItem = try XCTUnwrap(nodeModules.first {
+            $0.projectURL?.lastPathComponent == "a"
+        })
+        XCTAssertEqual(repoItem.lastActivity.timeIntervalSince1970, siblingDate.timeIntervalSince1970, accuracy: 2)
+        XCTAssertEqual(nestedItem.lastActivity.timeIntervalSince1970, nestedDate.timeIntervalSince1970, accuracy: 2)
+    }
+
     func testPreCancelledScanFinishesWithoutItems() async throws {
         let temp = try TempDir()
         try temp.write("app/package.json")
@@ -151,23 +269,196 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(result.summary.cancelled)
     }
 
+    func testMidWalkCancellationKeepsSummaryConsistent() async throws {
+        let temp = try TempDir()
+        try temp.write("app/package.json")
+        try temp.mkdir("app/node_modules")
+        try temp.write("app/node_modules/x.js", bytes: 10)
+        try temp.mkdir("tail")
+
+        let signal = EmitSignal()
+        var engine = ScanEngine(configuration: configuration(
+            root: temp.url,
+            rules: RuleCatalog.rules(knownLocations: KnownLocations(home: temp.url)),
+            shouldCancel: { signal.isSet() }
+        ))
+        engine.eventObserver = { event in
+            if case .discovered = event { signal.set() }
+        }
+
+        let result = try await collect(engine)
+
+        XCTAssertTrue(result.summary.cancelled)
+        XCTAssertGreaterThan(result.items.count, 0)
+        XCTAssertEqual(result.items.count, result.summary.itemCount)
+        XCTAssertEqual(
+            result.items.reduce(Int64(0)) { $0 + $1.allocatedBytes },
+            result.summary.totalBytes
+        )
+    }
+
+    func testDetectorIntegration() async throws {
+        let temp = try TempDir()
+        let item = JunkItem(
+            ruleID: RuleID("stub-detector"),
+            category: .swiftPM,
+            urls: [temp.url],
+            projectURL: nil,
+            projectLabel: "Stub",
+            lastActivity: Date(),
+            allocatedBytes: 123,
+            fileCount: 1,
+            warnings: [],
+            removal: .filesystem
+        )
+        let result = try await collect(ScanEngine(configuration: configuration(
+            root: temp.url,
+            detectors: [StubDetector(item: item)]
+        )))
+
+        XCTAssertEqual(result.items, [item])
+        XCTAssertEqual(result.summary.itemCount, 1)
+        XCTAssertEqual(result.summary.totalBytes, 123)
+    }
+
+    func testConsumerCancellationStopsWalkEvenWhenCancelClosureReturnsFalse() async throws {
+        let temp = try TempDir()
+        for index in 0..<60 {
+            try temp.mkdir("d\(index)")
+        }
+
+        let probe = DetectorProbe()
+        let configuration = configuration(
+            root: temp.url,
+            rules: [SlowRule()],
+            detectors: [ProbeDetector(probe: probe)],
+            shouldCancel: { false }
+        )
+        let stream = ScanEngine(configuration: configuration).scan()
+        let consumer = Task {
+            for try await _ in stream {}
+        }
+
+        try await Task.sleep(for: .milliseconds(30))
+        consumer.cancel()
+        _ = try? await consumer.value
+        try await Task.sleep(for: .milliseconds(500))
+
+        let wasCalled = await probe.wasCalled()
+        XCTAssertFalse(wasCalled, "Cancelling the consumer must stop the scan task")
+    }
+
     func testMissingRootThrows() async {
         let missing = URL(fileURLWithPath: "/tmp/sw33p-missing-\(UUID().uuidString)")
-        let locations = KnownLocations(home: missing)
-        let configuration = ScanConfiguration(
-            root: missing,
-            exclusions: [],
-            knownLocations: locations,
-            rules: [],
-            detectors: [],
-            shouldCancel: { false },
-            progressInterval: .zero
-        )
+        let configuration = configuration(root: missing)
+
         do {
             for try await _ in ScanEngine(configuration: configuration).scan() {}
             XCTFail("Expected rootNotFound")
         } catch {
             XCTAssertEqual(error as? ScanError, .rootNotFound(missing))
         }
+    }
+
+    func testRootIsNotDirectoryThrows() async throws {
+        let temp = try TempDir()
+        let file = try temp.write("file.txt")
+        let configuration = configuration(root: file)
+
+        do {
+            for try await _ in ScanEngine(configuration: configuration).scan() {}
+            XCTFail("Expected rootIsNotDirectory")
+        } catch {
+            XCTAssertEqual(error as? ScanError, .rootIsNotDirectory(file))
+        }
+    }
+
+    func testRootSymlinkThrows() async throws {
+        let temp = try TempDir()
+        let real = try temp.mkdir("real")
+        try temp.write("real/inside.txt")
+        let alias = try temp.symlink("alias", to: real)
+        let configuration = configuration(root: alias)
+
+        do {
+            for try await _ in ScanEngine(configuration: configuration).scan() {}
+            XCTFail("Expected rootIsSymlink")
+        } catch {
+            XCTAssertEqual(error as? ScanError, .rootIsSymlink(alias))
+        }
+    }
+
+    func testScanningTwoThousandDirectoriesIsFast() async throws {
+        let temp = try TempDir()
+        for index in 0..<2000 {
+            try FileManager.default.createDirectory(
+                at: temp.url.appendingPathComponent("d\(index)", isDirectory: true),
+                withIntermediateDirectories: false
+            )
+        }
+
+        let started = Date()
+        let result = try await scan(root: temp.url)
+        let elapsed = Date().timeIntervalSince(started)
+
+        XCTAssertTrue(result.items.isEmpty)
+        XCTAssertLessThan(elapsed, 5, "2000-directory scan took \(elapsed)s")
+        print(String(format: "ScanEngine 2000-directory scan: %.3fs", elapsed))
+    }
+}
+
+private final class EmitSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func set() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+
+    func isSet() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+private struct SlowRule: JunkRule {
+    let id = RuleID("slow")
+    let category: JunkCategory = .nodeModules
+
+    func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
+        Thread.sleep(forTimeInterval: 0.002)
+        return nil
+    }
+}
+
+private actor DetectorProbe {
+    private var called = false
+
+    func markCalled() {
+        called = true
+    }
+
+    func wasCalled() -> Bool {
+        called
+    }
+}
+
+private struct ProbeDetector: MaintenanceDetector {
+    let probe: DetectorProbe
+
+    func detect(context: ScanContext) async -> [JunkItem] {
+        await probe.markCalled()
+        return []
+    }
+}
+
+private struct StubDetector: MaintenanceDetector {
+    let item: JunkItem
+
+    func detect(context: ScanContext) async -> [JunkItem] {
+        [item]
     }
 }
