@@ -5,8 +5,18 @@ public protocol CommandRunner: Sendable {
     func run(executable: URL, arguments: [String]) async throws -> CommandOutput
 }
 
-public enum CommandRunnerError: Error, Hashable, Sendable {
-    case timedOut(executable: URL)
+public enum CommandRunnerError: Error, Hashable, Sendable, LocalizedError {
+    case timedOut(executable: URL, after: Duration)
+
+    public var errorDescription: String? {
+        switch self {
+        case .timedOut(let executable, let after):
+            let components = after.components
+            let seconds = Double(components.seconds)
+                + Double(components.attoseconds) / 1_000_000_000_000_000_000
+            return "\(executable.lastPathComponent) timed out after \(String(format: "%.2f", seconds)) seconds"
+        }
+    }
 }
 
 public struct ProcessCommandRunner: CommandRunner {
@@ -27,7 +37,7 @@ public struct ProcessCommandRunner: CommandRunner {
             }
             group.addTask {
                 try await Task.sleep(for: timeout)
-                throw CommandRunnerError.timedOut(executable: executable)
+                throw CommandRunnerError.timedOut(executable: executable, after: timeout)
             }
             do {
                 guard let output = try await group.next() else {
@@ -37,6 +47,10 @@ public struct ProcessCommandRunner: CommandRunner {
                 return output
             } catch {
                 group.cancelAll()
+                // Descendants can inherit stdout/stderr and hold the pipes open
+                // after the direct child exits. Close them so a blocked read
+                // cannot outlive the timeout.
+                handle.closePipes()
                 // Wait for the command task's SIGTERM-to-SIGKILL escalation so
                 // the runner never reports completion while the child lingers.
                 _ = try? await group.next()
@@ -57,6 +71,7 @@ public struct ProcessCommandRunner: CommandRunner {
             }
         } catch {
             await handle.terminateAndWait(grace: terminationGrace)
+            handle.closePipes()
             throw error
         }
         let stdout = await handle.stdoutData()
@@ -78,6 +93,7 @@ private final class ProcessHandle: @unchecked Sendable {
     private let lock = NSLock()
     private var stdoutTask: Task<Data, Never>?
     private var stderrTask: Task<Data, Never>?
+    private var pipesClosed = false
 
     init(executable: URL, arguments: [String]) {
         process.executableURL = executable
@@ -85,6 +101,10 @@ private final class ProcessHandle: @unchecked Sendable {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        var environment = ProcessInfo.processInfo.environment
+        environment["HOMEBREW_NO_ANALYTICS"] = "1"
+        environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
+        process.environment = environment
     }
 
     func start() throws {
@@ -124,6 +144,19 @@ private final class ProcessHandle: @unchecked Sendable {
                 try? await Task.sleep(for: .milliseconds(20))
             }
         }.value
+    }
+
+    /// Closes both read handles and our write ends. Descendants that inherited
+    /// the write ends cannot keep a read blocked once the read side is closed.
+    func closePipes() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !pipesClosed else { return }
+        pipesClosed = true
+        try? stdoutPipe.fileHandleForReading.close()
+        try? stderrPipe.fileHandleForReading.close()
+        try? stdoutPipe.fileHandleForWriting.close()
+        try? stderrPipe.fileHandleForWriting.close()
     }
 
     private func forceKill() {

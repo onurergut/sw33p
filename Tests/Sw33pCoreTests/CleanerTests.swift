@@ -200,6 +200,7 @@ final class CleanerTests: XCTestCase {
         let result = await cleaner.cleanup(plan, scanRoot: temp.url, shouldCancel: { false })
 
         XCTAssertEqual(result.commandOutcomes.count, 1)
+        XCTAssertEqual(result.commandOutcomes[0].output, "boom")
         XCTAssertEqual(result.failures.count, 1)
         XCTAssertTrue(result.removedItemIDs.isEmpty)
     }

@@ -7,7 +7,10 @@
   candidates that share a hard-linked file can still both count it, so a
   combined total can double-count that file.
 - Homebrew cleanup runs `brew cleanup`; sw33p does not reimplement Homebrew's
-  policy and cannot preview exactly which files it will remove.
+  policy and cannot preview exactly which files it will remove. Displayed
+  Homebrew cache bytes are an upper bound and may exceed what cleanup frees.
+- `SIGKILL` targets the direct child only. Descendants that inherited its
+  stdout/stderr can survive; sw33p closes the pipe handles to bound the wait.
 - A managed command cannot be paused once it starts. Cancellation or timeout
   sends `SIGTERM`, then `SIGKILL` after a 2-second grace period, and the runner
   waits for termination. Worst case is the command timeout plus the grace

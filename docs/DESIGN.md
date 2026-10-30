@@ -76,7 +76,7 @@ complete `.app` bundle at packaging time, as in conv3rt.
 | Updater | None in v0.1.0 | Keeps v1 scope small; Sparkle can be added in a later release |
 | Deletion default | `FileManager.trashItem` | Recoverable by default |
 | Permanent delete | Explicit opt-in in the summary sheet with a second confirmation | Irreversible action must be deliberate |
-| Rule ambiguity | Do not list the candidate; report an aggregate "left alone" note | "When unsure, do not list" |
+| Rule ambiguity | Do not list the candidate. Node/Python rules return a note; Rust, Gradle, and Xcode rules return `nil` silently | "When unsure, do not list" |
 | Age filter | Applied in the UI over completed scan results | Avoid rescanning; instant feedback |
 | Command-based rules | `MaintenanceDetector` producing `MaintenanceAction`, with an injected `CommandRunner` | Testable without running `simctl` or `brew` |
 
@@ -144,7 +144,8 @@ enum RuleMatch {
 
 Marker checks use `lstat` semantics: a marker must be a regular file and must
 not be a symlink. A rule that cannot validate its marker returns `.note` or
-`.skip`; it never returns a candidate.
+`.skip` where a user-facing note helps; otherwise it returns `nil` silently.
+It never returns a candidate.
 
 Adding a rule requires a catalog entry plus fixture tests. No scanner changes.
 
@@ -162,7 +163,9 @@ Adding a rule requires a catalog entry plus fixture tests. No scanner changes.
 - Default pruned paths: `.git`, `~/.Trash`, `~/Library/CloudStorage`,
   `~/Library/Mobile Documents`, `~/Library/Containers`,
   `~/Library/Group Containers`, `~/Library/Keychains`, `*.photoslibrary`,
-  and the system paths that cannot contain user junk.
+  and the system paths that cannot contain user junk. Pruning applies to
+  children during the walk; choosing one of these folders as the scan root is
+  allowed and its contents are scanned.
 - Unreadable directories produce a `ScanIssue`; scanning continues.
 - Cancellation is injected as `@Sendable () -> Bool` (`Task.isCancelled` in
   production) and checked per directory, so tests can cancel deterministically.

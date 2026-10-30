@@ -51,16 +51,19 @@ Those are different problems with different safety rules.
 | Python `__pycache__` | always, grouped per project | Trash |
 | Gradle / Android `build/` | a sibling `build.gradle` or `build.gradle.kts` exists | Trash |
 | Xcode DerivedData | `info.plist` exists inside | Trash |
-| Xcode Archives | valid `.xcarchive`; listed with a warning | Trash |
+| Xcode Archives | `.xcarchive` with `Info.plist` at `Archives/<date>/<name>.xcarchive`; listed with a warning | Trash |
 | Xcode DeviceSupport | known platform folder (`iOS`, `watchOS`, `tvOS`, `xrOS`, `visionOS`) and version-shaped name | Trash |
 | Unavailable simulators | reported by `simctl` | `xcrun simctl delete <udid>` |
 | SwiftPM cache | known cache path | Trash |
 | CocoaPods cache | known cache path | Trash |
 | npm / yarn / pnpm caches | known cache paths | Trash |
-| Homebrew cache | `brew` is installed | `brew cleanup` |
+| Homebrew cache | `brew` is installed; size is an upper bound | `brew cleanup` |
 
 Nothing is selected by default. Xcode Archives are listed with a warning
 because crash reports may need them; they are not preselected.
+
+Homebrew cache bytes are the cache folder's allocated size, an upper bound.
+`brew cleanup` may free less.
 
 ## Safety
 
@@ -72,7 +75,7 @@ because crash reports may need them; they are not preselected.
   running scan or cleanup.
 - Unreadable folders are reported, never guessed at. Full Disk Access may let
   sw33p read more of them.
-- The summary shows what will be removed, the total, and every warning.
+- The summary shows categories, counts, commands, and warnings before cleanup.
 - Sizes are allocated sizes. Hard links are counted once inside each candidate
   folder/subtree; shared links across candidates can be counted twice. APFS
   clones cannot be detected, so the real recovery may be smaller.
@@ -109,7 +112,9 @@ reports the folders it could not read and continues.
 
 No network access, no telemetry, no accounts. sw33p reads filenames and
 metadata on your Mac and nothing leaves it. Command-backed cleanup runs only
-`xcrun simctl` and `brew cleanup`.
+`xcrun simctl` and `brew cleanup`. Subprocesses inherit the app environment
+with `HOMEBREW_NO_ANALYTICS=1` and `HOMEBREW_NO_AUTO_UPDATE=1` added; sw33p
+itself contains no network code.
 
 ## Build from source
 

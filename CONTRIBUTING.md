@@ -2,7 +2,8 @@
 
 ## Ground rules
 
-- Never list a folder you cannot prove is reproducible.
+- Only list a folder when a rule can prove it is safe to remove; exceptions
+  (Xcode Archives, Homebrew cleanup) are labeled with warnings.
 - Never follow a symlink.
 - Trash is the default. Permanent deletion requires explicit confirmation.
 - Report allocated sizes. Do not inflate savings; state the APFS clone caveat.

@@ -48,10 +48,11 @@ public struct Cleaner: Sendable {
                         executable: action.executable,
                         arguments: action.arguments
                     )
+                    let failureOutput = output.stderr.isEmpty ? output.stdout : output.stderr
                     outcomes.append(CommandOutcome(
                         action: action,
                         status: output.status,
-                        output: output.status == 0 ? output.stdout : output.stderr
+                        output: output.status == 0 ? output.stdout : failureOutput
                     ))
                     if output.status == 0 {
                         removedIDs.insert(item.id)

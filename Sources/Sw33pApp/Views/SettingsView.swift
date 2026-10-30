@@ -44,7 +44,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("sw33p always skips caches it cannot prove are reproducible, symbolic links, the Trash, iCloud Drive, Photos libraries, and app containers.")
+                Text("During a scan, sw33p prunes symbolic links and these folders as children: the Trash, iCloud Drive, Photos libraries, and app containers. Choosing one as the scan root is allowed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

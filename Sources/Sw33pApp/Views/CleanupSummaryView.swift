@@ -45,9 +45,19 @@ struct CleanupSummaryView: View {
 
                     Divider()
                     HStack {
-                        Text("Total").font(.headline)
+                        Text(hasHomebrewItem ? "Total (upper bound)" : "Total")
+                            .font(.headline)
                         Spacer()
                         Text(Formatting.size(plan.totalBytes)).font(.headline.monospacedDigit())
+                    }
+
+                    if hasHomebrewItem {
+                        Label(
+                            "Homebrew cache size is an upper bound; brew cleanup may free less.",
+                            systemImage: "exclamationmark.triangle"
+                        )
+                        .font(.callout)
+                        .foregroundStyle(.orange)
                     }
 
                     ForEach(warnings, id: \.self) { warning in
@@ -105,6 +115,10 @@ struct CleanupSummaryView: View {
         } message: {
             Text("This cannot be undone. The selected items will not go to the Trash.")
         }
+    }
+
+    private var hasHomebrewItem: Bool {
+        plan.items.contains { $0.category == .homebrew }
     }
 
     private var warnings: [String] {

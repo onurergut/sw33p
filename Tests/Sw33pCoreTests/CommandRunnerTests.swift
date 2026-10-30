@@ -76,6 +76,40 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertLessThan(started.duration(to: .now), .seconds(2))
     }
 
+    func testDescendantHoldingPipesDoesNotOutliveTimeout() async throws {
+        let runner = ProcessCommandRunner(
+            timeout: .milliseconds(200),
+            terminationGrace: .milliseconds(100)
+        )
+        let started = ContinuousClock.now
+
+        do {
+            _ = try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "/bin/sleep 2 & exit 0"]
+            )
+            XCTFail("Expected the held pipes to time out")
+        } catch let error as CommandRunnerError {
+            guard case .timedOut = error else {
+                return XCTFail("Unexpected runner error: \(error)")
+            }
+            XCTAssertTrue(error.localizedDescription.contains("timed out after"))
+        }
+
+        XCTAssertLessThan(started.duration(to: .now), .seconds(1))
+    }
+
+    func testSubprocessEnvironmentDisablesHomebrewAnalyticsAndAutoUpdate() async throws {
+        let output = try await ProcessCommandRunner().run(
+            executable: URL(fileURLWithPath: "/usr/bin/env"),
+            arguments: []
+        )
+
+        XCTAssertEqual(output.status, 0)
+        XCTAssertTrue(output.stdout.contains("HOMEBREW_NO_ANALYTICS=1"))
+        XCTAssertTrue(output.stdout.contains("HOMEBREW_NO_AUTO_UPDATE=1"))
+    }
+
     func testCancellationTerminatesHungProcess() async throws {
         let runner = ProcessCommandRunner(timeout: .seconds(30))
         let task = Task {

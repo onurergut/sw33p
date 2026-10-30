@@ -217,7 +217,7 @@ final class AppModel {
         let locations = KnownLocations(home: home)
         let configuration = ScanConfiguration(
             root: scanRoot,
-            exclusions: allExclusions,
+            exclusions: userExclusions,
             knownLocations: locations,
             rules: RuleCatalog.rules(knownLocations: locations),
             detectors: [
@@ -416,9 +416,8 @@ final class AppModel {
             return true
         }
         guard !item.isManaged else { return false }
-        let defaults = DefaultExclusions.urls(home: home)
         return item.urls.contains { url in
-            defaults.contains { Self.isDescendant(url, of: $0) }
+            allExclusions.contains { Self.isDescendant(url, of: $0) }
         }
     }
 

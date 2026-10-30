@@ -57,13 +57,17 @@ would require deleting relative to an open directory descriptor.
 Sizes are allocated sizes (`st_blocks * 512`), not logical file sizes. Hard
 links are counted once inside a candidate subtree. APFS clones cannot be
 detected; the summary states that the real recoverable space may be smaller.
+Homebrew cache bytes are an upper bound; `brew cleanup` may free less.
 
-## What is never scanned
+## What is pruned from the walk
 
 Symbolic links, `.git` trees, the Trash, iCloud Drive, Mobile Documents, app
 containers, Group Containers, Keychains, Photos libraries, and CoreSimulator
 device data. Simulators are handled through `xcrun simctl`, not by deleting
 files directly.
+
+These paths are pruned as children during a scan. Choosing one of them as the
+scan root is allowed; its contents are then scanned.
 
 Unreadable folders are reported, never guessed at. Full Disk Access may let
 sw33p read protected folders such as Desktop, Documents, Downloads, and
@@ -75,10 +79,15 @@ Unavailable simulators are deleted with `xcrun simctl delete <udid>`.
 Homebrew cleanup runs `brew cleanup`. Both commands are shown in the summary
 before they run. sw33p builds the argument list itself; it does not accept
 shell input. Commands run with a 120-second timeout and no stdin. Cancellation
-or timeout sends the process `SIGTERM`; after a 2-second grace period sw33p
-sends `SIGKILL`, and the runner waits for the process to exit before reporting.
-Managed commands cannot be paused mid-run. Exit status and truncated failure
-output are reported.
+or timeout sends the direct child `SIGTERM`; after a 2-second grace period
+sw33p sends `SIGKILL`, and the runner waits for the process to exit before
+reporting. Descendants that inherited the child's pipes are not killed; sw33p
+closes the pipe handles so a held pipe cannot extend the wait. Surviving
+descendants are a documented limitation. Managed commands cannot be paused
+mid-run. Exit status and truncated failure output are reported.
+
+Subprocesses inherit the app environment with `HOMEBREW_NO_ANALYTICS=1` and
+`HOMEBREW_NO_AUTO_UPDATE=1` added. sw33p itself performs no network access.
 
 ## Network
 
