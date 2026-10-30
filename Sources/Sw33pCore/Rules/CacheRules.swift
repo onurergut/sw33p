@@ -8,7 +8,9 @@ public struct CacheRootRule: JunkRule {
     public init(id: RuleID, category: JunkCategory, roots: [URL]) {
         self.id = id
         self.category = category
-        self.roots = roots.map(\.standardizedFileURL)
+        self.roots = roots.map {
+            URL(fileURLWithPath: $0.standardizedFileURL.path, isDirectory: false)
+        }
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
