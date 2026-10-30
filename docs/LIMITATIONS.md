@@ -9,8 +9,8 @@
 - Homebrew cleanup runs `brew cleanup`; sw33p does not reimplement Homebrew's
   policy and cannot preview exactly which files it will remove.
 - A managed command cannot be paused once it starts. Cancellation or timeout
-  asks it to terminate, and a command that ignores `SIGTERM` runs until the
-  120-second timeout.
+  sends `SIGTERM`, then `SIGKILL` after a 2-second grace period, and the runner
+  waits for termination, bounded by the command timeout plus the grace period.
 - Xcode DeviceSupport folders are safe to remove, but debugging on that OS
   version downloads the symbols again.
 - Xcode Archives are not reproducible. Removing them can make older crash

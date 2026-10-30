@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public protocol CommandRunner: Sendable {
@@ -10,51 +11,62 @@ public enum CommandRunnerError: Error, Hashable, Sendable {
 
 public struct ProcessCommandRunner: CommandRunner {
     private let timeout: Duration
+    private let terminationGrace: Duration
 
-    public init(timeout: Duration = .seconds(120)) {
+    public init(timeout: Duration = .seconds(120), terminationGrace: Duration = .seconds(2)) {
         self.timeout = timeout
+        self.terminationGrace = terminationGrace
     }
 
     public func run(executable: URL, arguments: [String]) async throws -> CommandOutput {
         let handle = ProcessHandle(executable: executable, arguments: arguments)
+        let grace = terminationGrace
         return try await withThrowingTaskGroup(of: CommandOutput.self) { group in
             group.addTask {
-                try await Self.execute(handle)
+                try await Self.execute(handle, terminationGrace: grace)
             }
             group.addTask {
                 try await Task.sleep(for: timeout)
                 throw CommandRunnerError.timedOut(executable: executable)
             }
-            defer { group.cancelAll() }
-            guard let output = try await group.next() else {
-                throw CancellationError()
+            do {
+                guard let output = try await group.next() else {
+                    throw CancellationError()
+                }
+                group.cancelAll()
+                return output
+            } catch {
+                group.cancelAll()
+                // Wait for the command task's SIGTERM-to-SIGKILL escalation so
+                // the runner never reports completion while the child lingers.
+                _ = try? await group.next()
+                throw error
             }
-            return output
         }
     }
 
-    private static func execute(_ handle: ProcessHandle) async throws -> CommandOutput {
-        try await withTaskCancellationHandler {
-            defer { handle.terminate() }
-            try Task.checkCancellation()
-            try handle.start()
-            if Task.isCancelled {
-                handle.terminate()
-            }
+    private static func execute(
+        _ handle: ProcessHandle,
+        terminationGrace: Duration
+    ) async throws -> CommandOutput {
+        try Task.checkCancellation()
+        try handle.start()
+        do {
             while handle.isRunning {
                 try await Task.sleep(for: .milliseconds(20))
             }
-            let stdout = await handle.stdoutData()
-            let stderr = await handle.stderrData()
-            try Task.checkCancellation()
-            return CommandOutput(
-                status: handle.terminationStatus,
-                stdout: String(decoding: stdout, as: UTF8.self),
-                stderr: String(decoding: stderr, as: UTF8.self)
-            )
-        } onCancel: {
-            handle.terminate()
+        } catch {
+            await handle.terminateAndWait(grace: terminationGrace)
+            throw error
         }
+        let stdout = await handle.stdoutData()
+        let stderr = await handle.stderrData()
+        try Task.checkCancellation()
+        return CommandOutput(
+            status: handle.terminationStatus,
+            stdout: String(decoding: stdout, as: UTF8.self),
+            stderr: String(decoding: stderr, as: UTF8.self)
+        )
     }
 }
 
@@ -92,6 +104,33 @@ private final class ProcessHandle: @unchecked Sendable {
         defer { lock.unlock() }
         if process.isRunning {
             process.terminate()
+        }
+    }
+
+    /// Sends SIGTERM, then SIGKILL after the grace period. Runs detached so
+    /// the wait still happens when the calling task is cancelled.
+    func terminateAndWait(grace: Duration) async {
+        terminate()
+        await Task.detached(priority: .utility) { [self] in
+            let graceDeadline = ContinuousClock.now + grace
+            while isRunning, ContinuousClock.now < graceDeadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            if isRunning {
+                forceKill()
+            }
+            let killDeadline = ContinuousClock.now + .seconds(2)
+            while isRunning, ContinuousClock.now < killDeadline {
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+        }.value
+    }
+
+    private func forceKill() {
+        lock.lock()
+        defer { lock.unlock() }
+        if process.isRunning {
+            Darwin.kill(process.processIdentifier, SIGKILL)
         }
     }
 

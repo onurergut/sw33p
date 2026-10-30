@@ -54,6 +54,28 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertLessThan(started.duration(to: .now), .seconds(2))
     }
 
+    func testTimeoutEscalatesWhenTERMIsIgnored() async throws {
+        let runner = ProcessCommandRunner(
+            timeout: .milliseconds(100),
+            terminationGrace: .milliseconds(100)
+        )
+        let started = ContinuousClock.now
+
+        do {
+            _ = try await runner.run(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "trap '' TERM; while :; do sleep 0.1; done"]
+            )
+            XCTFail("Expected the command to time out")
+        } catch let error as CommandRunnerError {
+            guard case .timedOut = error else {
+                return XCTFail("Unexpected runner error: \(error)")
+            }
+        }
+
+        XCTAssertLessThan(started.duration(to: .now), .seconds(2))
+    }
+
     func testCancellationTerminatesHungProcess() async throws {
         let runner = ProcessCommandRunner(timeout: .seconds(30))
         let task = Task {

@@ -168,7 +168,10 @@ private final class WalkState {
             guard let stat = FileStatReader.stat(url) else { continue }
             if stat.isSymlink { continue }
             let components = url.pathComponents
-            if name == ".git" || context.isExcluded(components: components) { continue }
+            if name == ".git" || name.hasSuffix(".photoslibrary")
+                || context.isExcluded(components: components) {
+                continue
+            }
 
             if stat.isDirectory {
                 if let match = match(url: url, name: name) {

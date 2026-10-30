@@ -117,6 +117,17 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(result.items[0].url.path.contains("included"))
     }
 
+    func testAnyPhotosLibraryDirectoryIsPruned() async throws {
+        let temp = try TempDir()
+        try temp.write("Pictures/Trip.photoslibrary/project/package.json")
+        try temp.mkdir("Pictures/Trip.photoslibrary/project/node_modules")
+        try temp.write("Pictures/Trip.photoslibrary/project/node_modules/x.js", bytes: 10)
+
+        let result = try await scan(root: temp.url)
+
+        XCTAssertTrue(result.items.isEmpty)
+    }
+
     func testCanonicalRootHonorsAliasedExclusionAndFindsAliasedKnownCache() async throws {
         let temp = try TempDir()
         let real = try temp.mkdir("real")

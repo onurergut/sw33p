@@ -447,6 +447,13 @@ final class AppModel {
         if removedManaged > 0 {
             parts.append("Completed \(Formatting.tasks(removedManaged)).")
         }
+        if !result.commandOutcomes.isEmpty {
+            parts.append(
+                result.commandOutcomes
+                    .map(Self.commandOutcomeLine)
+                    .joined(separator: "\n")
+            )
+        }
         if removedFilesystem > 0 {
             parts.append("Reported sizes are allocated sizes; APFS clones may reduce the real recovery.")
         }
@@ -471,6 +478,24 @@ final class AppModel {
             parts.append("Nothing was cleaned.")
         }
         alert = .cleanupResult(parts.joined(separator: "\n"))
+    }
+
+    private static func commandOutcomeLine(_ outcome: CommandOutcome) -> String {
+        let summary = outcome.action.summary
+        guard outcome.status != 0 else {
+            return "\(summary): succeeded"
+        }
+        let detail = summarizedOutput(outcome.output)
+        if detail.isEmpty {
+            return "\(summary): failed (status \(outcome.status))"
+        }
+        return "\(summary): failed (status \(outcome.status)) — \(detail)"
+    }
+
+    private static func summarizedOutput(_ text: String, limit: Int = 240) -> String {
+        let collapsed = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard collapsed.count > limit else { return collapsed }
+        return String(collapsed.prefix(limit)) + "…"
     }
 
     private func makeScanSummary(cancelled: Bool) -> ScanSummary {

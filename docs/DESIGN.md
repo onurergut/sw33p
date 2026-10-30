@@ -13,8 +13,9 @@ Slogan: **Shows you the space you'll get back. It doesn't inflate it.**
 The product is deliberately honest about three things:
 
 1. Sizes are allocated sizes, not logical sizes.
-2. Hard links are counted once; APFS clones cannot be detected, so the
-   recoverable total can be lower than reported.
+2. Hard links are counted once inside each item; shared links across items can
+   be counted twice, and APFS clones cannot be detected, so the recoverable
+   total can be lower than reported.
 3. Moving files to the Trash does not free disk space until the Trash is
    emptied. The UI says so in the cleanup summary.
 
@@ -77,18 +78,20 @@ complete `.app` bundle at packaging time, as in conv3rt.
 | Permanent delete | Explicit opt-in in the summary sheet with a second confirmation | Irreversible action must be deliberate |
 | Rule ambiguity | Do not list the candidate; report an aggregate "left alone" note | "When unsure, do not list" |
 | Age filter | Applied in the UI over completed scan results | Avoid rescanning; instant feedback |
-| Command-based rules | `MaintenanceTask` with an injected `CommandRunner` | Testable without running `simctl` or `brew` |
+| Command-based rules | `MaintenanceDetector` producing `MaintenanceAction`, with an injected `CommandRunner` | Testable without running `simctl` or `brew` |
 
 ## Core architecture
 
 ```text
-ScanEngine        Sendable struct; AsyncThrowingStream<ScanEvent>
-                  DFS, cancellation, throttled progress
-RuleCatalog       [JunkRule]; each rule independent
-SizeCalculator    allocated size, hard-link dedupe, no symlink following
-CleanupPlanner    selection to summary; re-validates rules and containment
-Cleaner           injected TrashClient / FileRemover; per-item results
-MaintenanceTask   simctl and brew operations with injected CommandRunner
+ScanEngine         Sendable struct; AsyncThrowingStream<ScanEvent>
+                   DFS, cancellation, throttled progress
+RuleCatalog        [JunkRule]; each rule independent
+DirectorySizer     allocated size, hard-link dedupe, no symlink following
+CleanupPlanner     wraps a selection into a summary by category
+CleanupValidator   revalidates rules, containment, and path identities
+Cleaner            injected TrashClient / FileRemover; per-item results
+MaintenanceDetector simctl and brew detection with injected CommandRunner
+MaintenanceAction  executable, arguments, and summary for a managed removal
 ```
 
 ### Models
@@ -103,12 +106,15 @@ enum JunkCategory {
 struct JunkItem: Sendable, Identifiable {
     let ruleID: RuleID
     let category: JunkCategory
-    let url: URL                  // the folder or task target
+    let urls: [URL]               // folders, or the command target
     let projectURL: URL?          // validated project root, nil for global items
-    let lastActivity: Date?       // newest project mtime, excluding junk
+    let projectLabel: String?     // display name when projectURL is nil
+    let lastActivity: Date        // newest project mtime, excluding junk
     let allocatedBytes: Int64
     let fileCount: Int
     let warnings: [ItemWarning]
+    let removal: Removal          // .filesystem or .managed(MaintenanceAction)
+    let validation: ItemValidation
 }
 
 enum ScanEvent: Sendable {
@@ -126,18 +132,19 @@ enum ScanEvent: Sendable {
 protocol JunkRule: Sendable {
     var id: RuleID { get }
     var category: JunkCategory { get }
-    func match(_ entry: DirectoryEntry, context: inout ScanContext) -> RuleMatch?
+    func match(url: URL, name: String, context: ScanContext) -> RuleMatch?
 }
 
 enum RuleMatch {
     case candidate(JunkCandidate)
     case note(ScanNote)
+    case skip(ScanNote)
 }
 ```
 
 Marker checks use `lstat` semantics: a marker must be a regular file and must
 not be a symlink. A rule that cannot validate its marker returns `.note` or
-nothing; it never returns a candidate.
+`.skip`; it never returns a candidate.
 
 Adding a rule requires a catalog entry plus fixture tests. No scanner changes.
 

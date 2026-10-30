@@ -75,9 +75,10 @@ Unavailable simulators are deleted with `xcrun simctl delete <udid>`.
 Homebrew cleanup runs `brew cleanup`. Both commands are shown in the summary
 before they run. sw33p builds the argument list itself; it does not accept
 shell input. Commands run with a 120-second timeout and no stdin. Cancellation
-or timeout sends the process `SIGTERM`, and a command that ignores it runs
-until the timeout; managed commands cannot be paused mid-run. Exit status,
-standard output, and standard error are reported.
+or timeout sends the process `SIGTERM`; after a 2-second grace period sw33p
+sends `SIGKILL`, and the runner waits for the process to exit before reporting.
+Managed commands cannot be paused mid-run. Exit status, standard output, and
+standard error are reported.
 
 ## Network
 

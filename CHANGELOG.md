@@ -2,7 +2,7 @@
 
 ## 0.1.0
 
-Released 30 October 2026.
+Unreleased.
 
 - First release.
 - Scans `node_modules`, Rust `target/`, Python virtualenvs and `__pycache__`,

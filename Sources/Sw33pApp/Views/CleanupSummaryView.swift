@@ -30,6 +30,19 @@ struct CleanupSummaryView: View {
                         }
                     }
 
+                    if !commandSummaries.isEmpty {
+                        Divider()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Commands")
+                                .font(.caption.weight(.semibold))
+                            ForEach(commandSummaries, id: \.self) { summary in
+                                Text(summary)
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+
                     Divider()
                     HStack {
                         Text("Total").font(.headline)
@@ -43,7 +56,7 @@ struct CleanupSummaryView: View {
                             .foregroundStyle(.orange)
                     }
 
-                    Text("Sizes are allocated sizes. Hard links are counted once; APFS clones cannot be detected, so the real recovery can be smaller.")
+                    Text("Sizes are allocated sizes. Hard links are counted once inside each item; shared links across items can be counted twice. APFS clones cannot be detected, so the real recovery can be smaller.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -96,5 +109,12 @@ struct CleanupSummaryView: View {
 
     private var warnings: [String] {
         Array(Set(plan.items.flatMap { $0.warnings.map(\.message) })).sorted()
+    }
+
+    private var commandSummaries: [String] {
+        Array(Set(plan.items.compactMap { item -> String? in
+            guard case .managed(let action) = item.removal else { return nil }
+            return action.summary
+        })).sorted()
     }
 }

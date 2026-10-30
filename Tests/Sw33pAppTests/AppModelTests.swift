@@ -52,13 +52,14 @@ private final class CleanupRecorder {
 private func cleanupResult(
     removed: Set<String> = [],
     failures: [CleanupFailure] = [],
+    commandOutcomes: [CommandOutcome] = [],
     cancelled: Bool = false
 ) -> CleanupResult {
     CleanupResult(
         removedItemIDs: removed,
         removedURLs: [],
         failures: failures,
-        commandOutcomes: [],
+        commandOutcomes: commandOutcomes,
         attemptedBytes: 0,
         cancelled: cancelled
     )
@@ -368,6 +369,48 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(message.contains("1 item could not be removed"))
         XCTAssertTrue(message.contains(item.url.path))
         XCTAssertTrue(message.contains("Permission denied"))
+    }
+
+    func testCleanupSurfacesCommandOutcomesAndTruncatesFailureDetail() async {
+        let (preferences, defaults, suite) = makePreferences()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let brew = MaintenanceAction(
+            executable: URL(fileURLWithPath: "/opt/homebrew/bin/brew"),
+            arguments: ["cleanup"],
+            summary: "brew cleanup"
+        )
+        let simctl = MaintenanceAction(
+            executable: URL(fileURLWithPath: "/usr/bin/xcrun"),
+            arguments: ["simctl", "delete", "ABC"],
+            summary: "xcrun simctl delete ABC"
+        )
+        let item = makeItem(
+            path: "/Users/test/Library/Developer/CoreSimulator/Devices/ABC",
+            category: .simulators,
+            removal: .managed(simctl)
+        )
+        let longOutput = "failure " + String(repeating: "x", count: 500)
+        let recorder = CleanupRecorder { _ in
+            cleanupResult(commandOutcomes: [
+                CommandOutcome(action: brew, status: 0, output: "clean"),
+                CommandOutcome(action: simctl, status: 3, output: longOutput),
+            ])
+        }
+        let model = AppModel(
+            results: ScanResults(items: [item]),
+            preferences: preferences,
+            cleanupProvider: { await recorder.handle($0) }
+        )
+        model.selectedIDs = [item.id]
+        model.presentCleanupSummary()
+
+        await model.confirmCleanup(mode: .trash)
+
+        let message = model.alert?.message ?? ""
+        XCTAssertTrue(message.contains("brew cleanup: succeeded"))
+        XCTAssertTrue(message.contains("xcrun simctl delete ABC: failed (status 3)"))
+        XCTAssertTrue(message.contains("failure"))
+        XCTAssertFalse(message.contains(String(repeating: "x", count: 300)))
     }
 
     func testScanErrorUsesScanErrorAlert() async {
