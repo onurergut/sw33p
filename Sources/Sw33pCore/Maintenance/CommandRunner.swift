@@ -84,7 +84,7 @@ public struct ProcessCommandRunner: CommandRunner {
             await handle.terminateAndWait(grace: terminationGrace)
             throw error
         }
-        let output = handle.outputData()
+        let output = try handle.outputData()
         try Task.checkCancellation()
         return CommandOutput(
             status: handle.terminationStatus,
@@ -94,8 +94,18 @@ public struct ProcessCommandRunner: CommandRunner {
     }
 }
 
-private enum ProcessHandleError: Error {
+enum ProcessHandleError: Error, LocalizedError {
     case outputFileUnavailable
+    case outputReadFailed(URL)
+
+    var errorDescription: String? {
+        switch self {
+        case .outputFileUnavailable:
+            return "Could not create temporary output files for the command."
+        case .outputReadFailed(let url):
+            return "Could not read command output from \(url.path)."
+        }
+    }
 }
 
 /// Wraps `Process` and its output files for safe cross-thread control.
@@ -183,10 +193,20 @@ private final class ProcessHandle: @unchecked Sendable {
 
     /// Closes our write ends, then reads the files. Descendants that inherited
     /// the write ends cannot block a file read the way they block a pipe EOF.
-    func outputData() -> (stdout: Data, stderr: Data) {
+    func outputData() throws -> (stdout: Data, stderr: Data) {
         closeOutputHandles()
-        let stdout = (try? Data(contentsOf: stdoutURL)) ?? Data()
-        let stderr = (try? Data(contentsOf: stderrURL)) ?? Data()
+        let stdout: Data
+        do {
+            stdout = try Data(contentsOf: stdoutURL)
+        } catch {
+            throw ProcessHandleError.outputReadFailed(stdoutURL)
+        }
+        let stderr: Data
+        do {
+            stderr = try Data(contentsOf: stderrURL)
+        } catch {
+            throw ProcessHandleError.outputReadFailed(stderrURL)
+        }
         return (stdout, stderr)
     }
 

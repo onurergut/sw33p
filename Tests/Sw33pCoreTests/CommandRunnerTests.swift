@@ -125,6 +125,18 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertTrue(output.stdout.contains("HOMEBREW_NO_AUTO_UPDATE=1"))
     }
 
+    func testOutputErrorsHaveReadableDescriptions() {
+        let url = URL(fileURLWithPath: "/tmp/sw33p-missing-output")
+        XCTAssertEqual(
+            ProcessHandleError.outputReadFailed(url).localizedDescription,
+            "Could not read command output from /tmp/sw33p-missing-output."
+        )
+        XCTAssertEqual(
+            ProcessHandleError.outputFileUnavailable.localizedDescription,
+            "Could not create temporary output files for the command."
+        )
+    }
+
     func testCancellationTerminatesHungProcess() async throws {
         let runner = ProcessCommandRunner(timeout: .seconds(30))
         let task = Task {

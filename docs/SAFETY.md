@@ -65,9 +65,9 @@ Symbolic links, children named `.git`, and directories ending in
 `.photoslibrary` are skipped.
 
 The default exclusions matched by path prefix are the Trash, iCloud Drive,
-Mobile Documents, app containers, Group Containers, Keychains, CoreSimulator
-device data, and the default Photos Library. Simulators are handled through
-`xcrun simctl`, not by deleting files directly.
+Mobile Documents, app containers, Group Containers, Keychains, all of
+`~/Library/Developer/CoreSimulator`, and the default Photos Library. Simulators
+are handled through `xcrun simctl`, not by deleting files directly.
 
 These folders are pruned when encountered under the scan root. Selecting one
 of the prefix-excluded folders as the root is not useful: its children are
@@ -85,8 +85,9 @@ before they run. sw33p builds the argument list itself; it does not accept
 shell input. Commands run with a 120-second timeout and no stdin. Cancellation
 or timeout sends the direct child `SIGTERM`; after a 2-second grace period
 sw33p sends `SIGKILL`, and the runner waits for the process to exit before
-reporting. Descendants that inherited the child's pipes are not killed; sw33p
-closes the pipe handles so a held pipe cannot extend the wait. Surviving
+reporting. Descendants that inherited the child's output descriptors are not
+killed. sw33p closes the output file handles and reads file snapshots, so a
+descendant holding the write descriptor cannot block the wait. Surviving
 descendants are a documented limitation. Managed commands cannot be paused
 mid-run. Exit status and truncated failure output are reported.
 

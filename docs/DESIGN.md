@@ -163,12 +163,12 @@ Adding a rule requires a catalog entry plus fixture tests. No scanner changes.
 - Default pruned paths: children named `.git`, directories ending in
   `.photoslibrary`, and the prefix-excluded `~/.Trash`, `~/Library/CloudStorage`,
   `~/Library/Mobile Documents`, `~/Library/Containers`,
-  `~/Library/Group Containers`, `~/Library/Keychains`, CoreSimulator device
-  data, and the default Photos Library, plus the system paths that cannot
-  contain user junk. Prefix-excluded folders are pruned when encountered under
-  the root. Selecting one as the root is not useful because its children are
-  pruned too, so no filesystem items are found. A symlink scan root is
-  rejected.
+  `~/Library/Group Containers`, `~/Library/Keychains`,
+  `~/Library/Developer/CoreSimulator`, and
+  `~/Pictures/Photos Library.photoslibrary`. Prefix-excluded folders are pruned
+  when encountered under the root. Selecting one as the root is not useful
+  because its children are pruned too, so no filesystem items are found. A
+  symlink scan root is rejected.
 - Unreadable directories produce a `ScanIssue`; scanning continues.
 - Cancellation is injected as `@Sendable () -> Bool` (`Task.isCancelled` in
   production) and checked per directory, so tests can cancel deterministically.

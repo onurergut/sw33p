@@ -10,7 +10,9 @@
   policy and cannot preview exactly which files it will remove. Displayed
   Homebrew cache bytes are an upper bound and may exceed what cleanup frees.
 - `SIGKILL` targets the direct child only. Descendants that inherited its
-  stdout/stderr can survive; sw33p closes the pipe handles to bound the wait.
+  stdout/stderr can survive. sw33p closes the output file handles and reads
+  file snapshots, so a descendant holding the write descriptor cannot block the
+  wait.
 - A managed command cannot be paused once it starts. Cancellation or timeout
   sends `SIGTERM`, then `SIGKILL` after a 2-second grace period, and the runner
   waits for termination. Worst case is the command timeout plus the grace
