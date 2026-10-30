@@ -1,12 +1,5 @@
 import Foundation
 
-private func isVersionDirectoryName(_ name: String) -> Bool {
-    name.range(
-        of: #"^[0-9]+(\.[0-9]+)*( \([^)]*\))?$"#,
-        options: .regularExpression
-    ) != nil
-}
-
 public struct XcodeDerivedDataRule: JunkRule {
     public let id = RuleID("xcode-derived-data")
     public let category: JunkCategory = .xcodeDerivedData
@@ -88,11 +81,19 @@ public struct XcodeDeviceSupportRule: JunkRule {
         roots = knownLocations.xcodeDeviceSupport
     }
 
+    /// Shared with cleanup-time revalidation so the accepted shape cannot drift.
+    public static func isVersionDirectoryName(_ name: String) -> Bool {
+        name.range(
+            of: #"^[0-9]+(\.[0-9]+)*( \([^)]*\))?$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
         let parent = url.deletingLastPathComponent()
         guard let root = roots.first(where: { $0.standardizedPath == parent.standardizedPath }),
               MarkerCheck.realDirectory(url),
-              isVersionDirectoryName(name) else {
+              Self.isVersionDirectoryName(name) else {
             return nil
         }
         return .candidate(JunkCandidate(
