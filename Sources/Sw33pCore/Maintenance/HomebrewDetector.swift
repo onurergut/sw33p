@@ -1,34 +1,48 @@
 import Foundation
 
 public struct HomebrewDetector: MaintenanceDetector {
-    private let runner: any CommandRunner
-    private let brewExecutable: URL?
-    private let candidates = [
+    static let defaultCandidates = [
         URL(fileURLWithPath: "/opt/homebrew/bin/brew"),
         URL(fileURLWithPath: "/usr/local/bin/brew"),
     ]
 
-    public init(runner: any CommandRunner = ProcessCommandRunner(), brewExecutable: URL? = nil) {
+    private let runner: any CommandRunner
+    private let brewExecutable: URL?
+    private let brewCandidates: [URL]
+
+    public init(
+        runner: any CommandRunner = ProcessCommandRunner(),
+        brewExecutable: URL? = nil,
+        brewCandidates: [URL]? = nil
+    ) {
         self.runner = runner
         self.brewExecutable = brewExecutable
+        self.brewCandidates = brewCandidates ?? Self.defaultCandidates
     }
 
     public func detect(context: ScanContext) async -> [JunkItem] {
-        guard let brew = brewExecutable ?? candidates.first(where: {
-            FileStatReader.stat($0) != nil
-        }), FileStatReader.stat(brew) != nil else {
+        let brew: URL
+        if let brewExecutable {
+            brew = brewExecutable
+        } else if let discovered = brewCandidates.first(where: isExecutableBrew) {
+            brew = discovered
+        } else {
             return []
         }
+        guard isExecutableBrew(brew) else { return [] }
+
         guard let output = try? await runner.run(executable: brew, arguments: ["--cache"]),
-              output.status == 0,
-              let path = output.stdout
-                .split(whereSeparator: \.isNewline)
-                .map({ $0.trimmingCharacters(in: .whitespaces) })
-                .first(where: { !$0.isEmpty }) else {
+              output.status == 0 else {
             return []
         }
-        let cache = URL(fileURLWithPath: path).standardizedFileURL
-        guard FileStatReader.stat(cache)?.isDirectory == true else { return [] }
+        let cache = output.stdout
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { URL(fileURLWithPath: $0).standardizedFileURL }
+            .first { FileStatReader.stat($0)?.isDirectory == true }
+        guard let cache else { return [] }
+
         let size = DirectorySizer().size(of: cache)
             ?? DirectorySize(allocatedBytes: 0, fileCount: 0)
 
@@ -52,5 +66,11 @@ public struct HomebrewDetector: MaintenanceDetector {
             )),
             validation: .none
         )]
+    }
+
+    private func isExecutableBrew(_ url: URL) -> Bool {
+        let resolved = url.resolvingSymlinksInPath()
+        guard FileStatReader.stat(resolved)?.isRegularFile == true else { return false }
+        return FileManager.default.isExecutableFile(atPath: resolved.path)
     }
 }

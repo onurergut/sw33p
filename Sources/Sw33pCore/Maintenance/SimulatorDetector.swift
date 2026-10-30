@@ -1,21 +1,6 @@
 import Foundation
 
 public struct SimulatorDetector: MaintenanceDetector {
-    private struct Output: Decodable {
-        let devices: [String: [Device]]
-    }
-
-    private struct Device: Decodable {
-        let udid: String
-        let name: String
-        let state: String
-        let isAvailable: Bool?
-
-        var isUnavailable: Bool {
-            isAvailable == false || state == "unavailable"
-        }
-    }
-
     private let devicesRoot: URL
     private let runner: any CommandRunner
     private let xcrun: URL
@@ -38,15 +23,30 @@ public struct SimulatorDetector: MaintenanceDetector {
             return []
         }
         guard let data = output.stdout.data(using: .utf8),
-              let decoded = try? JSONDecoder().decode(Output.self, from: data) else {
+              let payload = try? JSONSerialization.jsonObject(with: data),
+              let root = payload as? [String: Any],
+              let runtimes = root["devices"] as? [String: Any] else {
             return []
         }
 
         var items: [JunkItem] = []
-        for (runtime, devices) in decoded.devices {
-            for device in devices where device.isUnavailable {
-                guard isUDID(device.udid) else { continue }
-                let directory = devicesRoot.appendingPathComponent(device.udid, isDirectory: false)
+        var seenUDIDs = Set<String>()
+        for (runtime, rawDevices) in runtimes {
+            guard let devices = rawDevices as? [Any] else { continue }
+            for entry in devices {
+                guard let device = entry as? [String: Any],
+                      let udid = device["udid"] as? String,
+                      let name = device["name"] as? String,
+                      let state = device["state"] as? String else {
+                    continue
+                }
+                let isAvailable = device["isAvailable"] as? Bool
+                let isUnavailable = isAvailable.map { !$0 } ?? (state == "unavailable")
+                guard isUnavailable, isUDID(udid), seenUDIDs.insert(udid).inserted else {
+                    continue
+                }
+
+                let directory = devicesRoot.appendingPathComponent(udid, isDirectory: false)
                 let size = DirectorySizer().size(of: directory)
                     ?? DirectorySize(allocatedBytes: 0, fileCount: 0)
                 let modified = FileStatReader.stat(directory)?.modified ?? Date.distantPast
@@ -58,25 +58,49 @@ public struct SimulatorDetector: MaintenanceDetector {
                     category: .simulators,
                     urls: [directory],
                     projectURL: nil,
-                    projectLabel: "\(device.name) (\(runtimeName))",
+                    projectLabel: "\(name) (\(runtimeName))",
                     lastActivity: modified,
                     allocatedBytes: size.allocatedBytes,
                     fileCount: size.fileCount,
                     warnings: [],
                     removal: .managed(MaintenanceAction(
                         executable: xcrun,
-                        arguments: ["simctl", "delete", device.udid],
-                        summary: "xcrun simctl delete \(device.udid)"
+                        arguments: ["simctl", "delete", udid],
+                        summary: "xcrun simctl delete \(udid)"
                     )),
                     validation: .none
                 ))
             }
         }
-        return items.sorted { ($0.projectLabel ?? "") < ($1.projectLabel ?? "") }
+        return items.sorted { left, right in
+            let leftLabel = left.projectLabel ?? ""
+            let rightLabel = right.projectLabel ?? ""
+            if leftLabel != rightLabel { return leftLabel < rightLabel }
+            return left.url.lastPathComponent < right.url.lastPathComponent
+        }
     }
 
     private func isUDID(_ value: String) -> Bool {
-        let pattern = "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
-        return value.range(of: pattern, options: .regularExpression) != nil
+        let groups = [8, 4, 4, 4, 12]
+        let bytes = value.utf8
+        guard bytes.count == 36 else { return false }
+        var index = bytes.startIndex
+        for (offset, group) in groups.enumerated() {
+            if offset > 0 {
+                guard bytes[index] == UInt8(ascii: "-") else { return false }
+                index = bytes.index(after: index)
+            }
+            for _ in 0..<group {
+                guard index < bytes.endIndex, isHexDigit(bytes[index]) else { return false }
+                index = bytes.index(after: index)
+            }
+        }
+        return index == bytes.endIndex
+    }
+
+    private func isHexDigit(_ byte: UInt8) -> Bool {
+        (byte >= 48 && byte <= 57)
+            || (byte >= 65 && byte <= 70)
+            || (byte >= 97 && byte <= 102)
     }
 }
