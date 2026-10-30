@@ -96,6 +96,59 @@ final class KnownLocationsTests: XCTestCase {
         XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent("Documents")))
     }
 
+    func testAliasedConfiguredRootsKeepEveryConvenienceURL() throws {
+        let first = try TempDir()
+        let firstLocations = KnownLocations(home: first.url)
+        let firstHome = firstLocations.home
+        let caches = firstHome.appendingPathComponent("Library/Caches")
+        try FileManager.default.createDirectory(
+            at: caches.appendingPathComponent("Yarn"),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: firstHome.appendingPathComponent(".cache"),
+            withDestinationURL: caches
+        )
+        assertAllConvenienceRootsAreUsable(KnownLocations(home: firstHome))
+
+        let second = try TempDir()
+        let secondLocations = KnownLocations(home: second.url)
+        let secondHome = secondLocations.home
+        let pnpmStore = secondHome.appendingPathComponent(".pnpm-store")
+        try FileManager.default.createDirectory(at: pnpmStore, withIntermediateDirectories: true)
+        let secondCaches = secondHome.appendingPathComponent("Library/Caches")
+        try FileManager.default.createDirectory(at: secondCaches, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: secondCaches.appendingPathComponent("Yarn"),
+            withDestinationURL: pnpmStore
+        )
+        let deduped = KnownLocations(home: secondHome)
+        assertAllConvenienceRootsAreUsable(deduped)
+
+        XCTAssertEqual(deduped.npmCacheRoots.count, 6)
+        XCTAssertEqual(Set(deduped.npmCacheRoots.map(\.path)).count, 5)
+    }
+
+    private func assertAllConvenienceRootsAreUsable(
+        _ locations: KnownLocations,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let roots =
+            locations.allRoots
+            + [locations.swiftPM, locations.cocoaPods, locations.xcodeDerivedData, locations.xcodeArchives]
+            + locations.xcodeDeviceSupport
+            + locations.npmCacheRoots
+
+        XCTAssertFalse(roots.isEmpty, file: file, line: line)
+        for root in roots {
+            XCTAssertFalse(root.path.isEmpty, file: file, line: line)
+        }
+        XCTAssertEqual(locations.xcodeDeviceSupport.count, 5, file: file, line: line)
+        XCTAssertEqual(locations.npmCacheRoots.count, 6, file: file, line: line)
+        XCTAssertEqual(RuleCatalog.rules(knownLocations: locations).count, 10, file: file, line: line)
+    }
+
     func testEveryExposedRootIsConsistent() throws {
         let temp = try TempDir()
         let locations = KnownLocations(home: temp.url)

@@ -40,10 +40,10 @@ public struct KnownLocations: Sendable {
 
         func add(root relativePath: String, depth: Int) {
             let url = canonicalHome.appendingPathComponent(relativePath).canonicalScanURL
+            urlsByRelativePath[relativePath] = url
             let path = url.path
             guard depths[path] == nil else { return }
             depths[path] = depth
-            urlsByRelativePath[relativePath] = url
             roots.append(Root(url: url, components: url.pathComponents, depth: depth))
         }
 
@@ -84,7 +84,8 @@ public struct KnownLocations: Sendable {
     }
 
     private func url(_ relativePath: String) -> URL {
-        urlsByRelativePath[relativePath]!
+        urlsByRelativePath[relativePath]
+            ?? home.appendingPathComponent(relativePath).canonicalScanURL
     }
 
     public func contains(_ url: URL) -> Bool {
