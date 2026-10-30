@@ -35,7 +35,6 @@ cp "$BIN" "$BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ROOT/Resources/Info.plist" "$BUNDLE/Contents/Info.plist"
 cp "$ROOT/Resources/sw33p.icns" "$BUNDLE/Contents/Resources/sw33p.icns"
 cp "$ROOT/LICENSE" "$BUNDLE/Contents/Resources/LICENSE.txt"
-cp "$ROOT/Resources/sw33p.entitlements" "$BUNDLE/Contents/Resources/sw33p.entitlements"
 
 PLIST="$BUNDLE/Contents/Info.plist"
 set_plist() {
@@ -65,6 +64,7 @@ SIGN_ARGS=(--force --sign "${CODESIGN_IDENTITY:--}")
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
     SIGN_ARGS+=(--options runtime --timestamp)
     SIGN_STATE="signed with '$CODESIGN_IDENTITY' (Hardened Runtime)"
+    printf '==> WARNING: Developer ID signature applied; notarization is still required before distribution.\n' >&2
 else
     SIGN_STATE='ad-hoc signed (NOT for distribution)'
 fi

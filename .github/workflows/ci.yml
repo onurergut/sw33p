@@ -5,9 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +46,8 @@ jobs:
               Sources Tests
           done < <(find "$BIN_PATH" -type d -name '*.xctest' | sort)
           if [[ "$found" -eq 0 ]]; then
-            echo "No test bundles with executables found under $BIN_PATH"
+            echo "No test bundles with executables found under $BIN_PATH" >&2
+            exit 1
           fi
 
       - name: Release build

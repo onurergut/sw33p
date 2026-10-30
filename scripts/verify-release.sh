@@ -15,6 +15,11 @@ EXE="$APP/Contents/MacOS/sw33p"
 [[ -f "$PLIST" ]] || { printf 'Missing Info.plist\n' >&2; exit 1; }
 [[ -f "$APP/Contents/Resources/sw33p.icns" ]] || { printf 'Missing icon\n' >&2; exit 1; }
 
+case "$ARCH" in
+    arm64|x86_64) ;;
+    *) printf 'Unsupported architecture: %s\n' "$ARCH" >&2; exit 1 ;;
+esac
+
 actual_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
 [[ "$actual_version" == "$VERSION" ]] || { printf 'Version mismatch: %s != %s\n' "$actual_version" "$VERSION" >&2; exit 1; }
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
@@ -28,10 +33,18 @@ else
     lipo -info "$EXE" | grep -q 'x86_64' || { printf 'Expected x86_64 binary\n' >&2; exit 1; }
 fi
 
-if otool -l "$EXE" | grep -F -q -e "$ROOT/.build" -e "/.build/"; then
-    printf 'Binary still has a build-directory rpath\n' >&2
-    exit 1
-fi
+RPATHS="$(otool -l "$EXE" | /usr/bin/awk '
+    $1 == "cmd" && $2 == "LC_RPATH" { pending=1; next }
+    pending && $1 == "path" { sub(/^[[:space:]]*path /, ""); sub(/ \(offset [0-9]+\)$/, ""); print; pending=0 }
+')"
+while IFS= read -r rpath; do
+    [[ -n "$rpath" ]] || continue
+    case "$rpath" in
+        "$ROOT/.build"|"$ROOT/.build/"*|*/.build/*)
+            printf 'Binary still has a build-directory rpath: %s\n' "$rpath" >&2
+            exit 1 ;;
+    esac
+done <<< "$RPATHS"
 
 codesign --verify --deep --strict "$APP"
 printf 'Verified %s %s (%s)\n' "$(basename "$APP")" "$VERSION" "$ARCH"
