@@ -23,7 +23,7 @@ struct CleanupSummaryView: View {
                         HStack {
                             Text(entry.category.title)
                             Spacer()
-                            Text("\(entry.count) items")
+                            Text(Formatting.items(entry.count))
                                 .foregroundStyle(.secondary)
                             Text(Formatting.size(entry.bytes))
                                 .monospacedDigit()

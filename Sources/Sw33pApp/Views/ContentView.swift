@@ -31,7 +31,10 @@ struct ContentView: View {
                     } else if model.visibleItems.isEmpty {
                         EmptyStateView(
                             isScanning: model.isScanning,
-                            hasResults: !model.results.items.isEmpty
+                            hasScanned: model.hasScanned,
+                            cancelled: model.scanSummary?.cancelled == true,
+                            hasResults: !model.results.items.isEmpty,
+                            rootPath: model.scanRoot.path
                         )
                     } else {
                         ResultsList(model: model)
@@ -45,21 +48,12 @@ struct ContentView: View {
         .sheet(item: $model.pendingPlan) { plan in
             CleanupSummaryView(model: model, plan: plan)
         }
-        .alert("Cleanup", isPresented: Binding(
-            get: { model.cleanupMessage != nil },
-            set: { if !$0 { model.cleanupMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { model.cleanupMessage = nil }
-        } message: {
-            Text(model.cleanupMessage ?? "")
-        }
-        .alert("Scan failed", isPresented: Binding(
-            get: { model.errorMessage != nil },
-            set: { if !$0 { model.errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { model.errorMessage = nil }
-        } message: {
-            Text(model.errorMessage ?? "")
+        .alert(item: $model.alert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 }
@@ -67,9 +61,15 @@ struct ContentView: View {
 private struct ScanStatusBanner: View {
     let model: AppModel
     @State private var showingIssues = false
+    @State private var showingNotes = false
 
     var body: some View {
         HStack(spacing: 12) {
+            if let scanStatusMessage = model.scanStatusMessage {
+                Label(scanStatusMessage, systemImage: "stop.circle")
+                    .foregroundStyle(.secondary)
+            }
+
             if let issueSummary = model.issueSummary {
                 Button {
                     showingIssues.toggle()
@@ -78,6 +78,8 @@ private struct ScanStatusBanner: View {
                         .foregroundStyle(.orange)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(issueSummary)
+                .accessibilityHint("Shows folders sw33p could not read")
                 .help("Show folders that could not be read")
                 .popover(isPresented: $showingIssues, arrowEdge: .bottom) {
                     issueList
@@ -85,11 +87,21 @@ private struct ScanStatusBanner: View {
             }
 
             if !model.noteSummaries.isEmpty {
-                Label(model.combinedNoteSummary, systemImage: "info.circle")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .help(model.noteSummaries.joined(separator: "\n"))
+                Button {
+                    showingNotes.toggle()
+                } label: {
+                    Label(model.combinedNoteSummary, systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Scan notes")
+                .accessibilityHint("Shows folders sw33p left alone")
+                .help("Show folders sw33p left alone")
+                .popover(isPresented: $showingNotes, arrowEdge: .bottom) {
+                    notesList
+                }
             }
 
             Spacer(minLength: 0)
@@ -98,7 +110,6 @@ private struct ScanStatusBanner: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(.quaternary.opacity(0.35))
-        .accessibilityElement(children: .combine)
     }
 
     private var issueList: some View {
@@ -138,15 +149,50 @@ private struct ScanStatusBanner: View {
         .padding(14)
         .frame(width: 460)
     }
+
+    private var notesList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Left alone")
+                .font(.headline)
+            Text("sw33p did not list these folders because it could not prove they are disposable.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.notes) { note in
+                        Text(AppModel.presentedNote(note))
+                            .font(.caption)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 190)
+
+            HStack {
+                Spacer()
+                Button("Close") { showingNotes = false }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(14)
+        .frame(width: 460)
+    }
 }
 
 private struct EmptyStateView: View {
     let isScanning: Bool
+    let hasScanned: Bool
+    let cancelled: Bool
     let hasResults: Bool
+    let rootPath: String
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: hasResults ? "line.3.horizontal.decrease.circle" : "sparkles")
+            Image(systemName: imageName)
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.secondary)
             Text(title).font(.headline)
@@ -159,14 +205,28 @@ private struct EmptyStateView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    private var imageName: String {
+        if cancelled { return "stop.circle" }
+        if hasResults { return "line.3.horizontal.decrease.circle" }
+        return "sparkles"
+    }
+
     private var title: String {
         if isScanning { return "Scanning…" }
         if hasResults { return "Nothing matches this filter" }
+        if cancelled { return "Scan cancelled" }
+        if hasScanned { return "No junk found" }
         return "Nothing scanned yet"
     }
 
     private var message: String {
         if hasResults { return "Lower the age filter or choose another category." }
+        if cancelled {
+            return "No junk was found before the scan stopped. Partial results are kept."
+        }
+        if hasScanned {
+            return "No junk found in \(rootPath). sw33p lists only folders it can prove are disposable."
+        }
         return "Choose a folder and press Scan. sw33p finds only folders it can prove are disposable."
     }
 }

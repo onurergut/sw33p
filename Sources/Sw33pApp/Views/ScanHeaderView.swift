@@ -14,6 +14,7 @@ struct ScanHeaderView: View {
                     .truncationMode(.middle)
             }
             .buttonStyle(.bordered)
+            .disabled(model.isScanning || model.isCleaning)
             .help("Choose the folder to scan")
 
             Spacer()
@@ -28,11 +29,10 @@ struct ScanHeaderView: View {
 
             if model.isScanning {
                 Button("Cancel") { model.cancelScan() }
-                    .keyboardShortcut(".", modifiers: .command)
             } else {
                 Button("Scan") { model.startScan() }
-                    .keyboardShortcut("r", modifiers: .command)
                     .buttonStyle(.borderedProminent)
+                    .disabled(model.isCleaning)
             }
         }
         .padding(.horizontal, 14)

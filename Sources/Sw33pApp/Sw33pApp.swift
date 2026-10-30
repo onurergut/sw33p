@@ -15,12 +15,20 @@ struct Sw33pApp: App {
             CommandGroup(after: .newItem) {
                 Button("Scan") { model.startScan() }
                     .keyboardShortcut("r", modifiers: .command)
+                    .disabled(model.isCleaning)
                 Button("Cancel Scan") { model.cancelScan() }
                     .keyboardShortcut(".", modifiers: .command)
                     .disabled(!model.isScanning)
                 Divider()
                 Button("Clean Up…") { model.presentCleanupSummary() }
-                    .disabled(model.selectedItems.isEmpty)
+                    .disabled(
+                        model.isScanning
+                            || model.isCleaning
+                            || model.pendingPlan != nil
+                            || model.selectedItems.isEmpty
+                    )
+                Button("Cancel Cleanup") { model.cancelCleanup() }
+                    .disabled(!model.isCleaning)
             }
         }
 

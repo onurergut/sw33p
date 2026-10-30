@@ -17,7 +17,7 @@ struct ResultsList: View {
                         Image(systemName: group.category.systemImage)
                         Text(group.category.title)
                         Spacer()
-                        Text("\(group.items.count) items")
+                        Text(Formatting.items(group.items.count))
                         Text(Formatting.size(group.items.reduce(0) { $0 + $1.allocatedBytes }))
                     }
                     .font(.caption.weight(.semibold))
@@ -40,7 +40,9 @@ struct ResultsList: View {
             ))
             .toggleStyle(.checkbox)
             .labelsHidden()
-            .accessibilityLabel("Select \(item.url.lastPathComponent)")
+            .accessibilityLabel(
+                "Select \(item.url.lastPathComponent) in \(item.projectURL?.path ?? item.projectLabel ?? "global cache")"
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -50,6 +52,7 @@ struct ResultsList: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
                             .help(warning.message)
+                            .accessibilityLabel("Warning: \(warning.message)")
                     }
                 }
                 Text(item.projectURL?.path ?? item.projectLabel ?? "Global cache")

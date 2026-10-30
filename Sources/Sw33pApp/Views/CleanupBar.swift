@@ -7,8 +7,8 @@ struct CleanupBar: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                if !model.selectedIDs.isEmpty {
-                    Text("\(model.selectedItems.count) selected · \(Formatting.size(model.selectedBytes))")
+                if !model.selectedItems.isEmpty {
+                    Text("\(Formatting.items(model.selectedItems.count)) selected · \(Formatting.size(model.selectedBytes))")
                 } else {
                     Text("\(Formatting.size(model.totalVisibleBytes)) found")
                 }
@@ -20,8 +20,18 @@ struct CleanupBar: View {
 
             Spacer(minLength: 12)
 
-            Button("Clean Up…") { model.presentCleanupSummary() }
-                .disabled(model.selectedItems.isEmpty || model.isScanning || model.isCleaning)
+            if model.isCleaning {
+                ProgressView()
+                    .controlSize(.small)
+                Button("Cancel Cleanup") { model.cancelCleanup() }
+            } else {
+                Button("Clean Up…") { model.presentCleanupSummary() }
+                    .disabled(
+                        model.isScanning
+                            || model.selectedItems.isEmpty
+                            || model.pendingPlan != nil
+                    )
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

@@ -3,7 +3,7 @@ import SwiftUI
 import Sw33pCore
 
 struct SettingsView: View {
-    @Bindable var model: AppModel
+    let model: AppModel
 
     var body: some View {
         Form {
@@ -14,6 +14,7 @@ struct SettingsView: View {
                         .truncationMode(.middle)
                     Spacer()
                     Button("Change…") { model.chooseScanRoot() }
+                        .disabled(model.isScanning || model.isCleaning)
                 }
             }
 

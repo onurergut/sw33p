@@ -5,13 +5,24 @@ enum Formatting {
     static let bytes: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
-        formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
+        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB, .useTB]
         formatter.isAdaptive = true
         return formatter
     }()
 
     static func size(_ value: Int64) -> String {
-        bytes.string(fromByteCount: value)
+        if (0..<1024).contains(value) {
+            return "\(value) \(value == 1 ? "byte" : "bytes")"
+        }
+        return bytes.string(fromByteCount: value)
+    }
+
+    static func items(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "item" : "items")"
+    }
+
+    static func tasks(_ count: Int) -> String {
+        "\(count) \(count == 1 ? "maintenance task" : "maintenance tasks")"
     }
 
     static func age(_ date: Date, now: Date = Date()) -> String {
