@@ -55,7 +55,6 @@ docs/DESIGN.md
 docs/SAFETY.md
 docs/LIMITATIONS.md
 docs/icon.png
-docs/screenshot.png
 .github/workflows/ci.yml
 README.md
 CONTRIBUTING.md
@@ -165,22 +164,35 @@ Adding a rule requires a catalog entry plus fixture tests. No scanner changes.
 
 ### Sizing
 
-`SizeCalculator` walks a candidate subtree once and sums
-`URLResourceKey.totalFileAllocatedSizeKey`. Hard links are counted once using
-`(volumeIdentifier, fileResourceIdentifier)` pairs. Symlinks are skipped
-entirely. Clones cannot be detected; this limitation is surfaced in the
-summary, not hidden.
+`DirectorySizer` walks a candidate subtree once and sums allocated bytes from
+`lstat` as `st_blocks * 512`. Hard links are counted once using `(st_dev,
+st_ino)` identities. Symlinks are skipped entirely. Clones cannot be detected;
+this limitation is surfaced in the summary, not hidden. Deduplication is per
+candidate subtree, so two candidates that share a hard link can both count it.
 
 ### Cleanup
 
 `CleanupPlanner` turns a selection into a summary broken down by category.
-`Cleaner` re-validates every item immediately before deleting:
+User exclusions are enforced when the summary is prepared and again at confirm
+time; adding an exclusion cancels a running scan or cleanup. Default
+exclusions guard the walker and filesystem cleanup, while managed command items
+are exempt from default walk exclusions but not from user exclusions.
+
+`Cleaner` re-validates every filesystem item immediately before deleting:
 
 1. The path exists and is a directory, verified with `lstat`.
 2. No path component from the root to the candidate is a symlink.
 3. The canonical candidate path is inside the selected scan root.
-4. The rule still validates the candidate: marker present, or path is in the
-   compiled-in global-cache allowlist.
+4. The rule still validates the candidate.
+
+Validation is an explicit enum: `.marker(URL)` for a regular in-root marker,
+`.knownRoot(URL)` for an exact compiled-in cache root, `.versionedKnownRoot(URL)`
+for a direct child of an exact Xcode DeviceSupport platform folder with a
+version-shaped name, and `.pythonCache` for a `__pycache__` directory. `.none`
+is rejected for filesystem items. Command-backed items are routed by
+`Removal.managed` and are never passed to the Trash. Before each deletion a
+receipt re-checks ancestor, target, and marker identities; this narrows but
+does not close the path-based TOCTOU window.
 
 Deletion uses `FileManager.trashItem` by default. Permanent deletion requires
 the summary sheet's Trash toggle to be off and a second confirmation. Results
@@ -196,8 +208,8 @@ are reported per item; partial failure is never collapsed into success.
 | pythonArtifacts | `__pycache__` | project context; aggregated per project | Trash |
 | gradleAndroid | directory named `build` | sibling `build.gradle` or `build.gradle.kts` | Trash |
 | xcodeDerivedData | `~/Library/Developer/Xcode/DerivedData/*` | `info.plist` inside; show `WorkspacePath` when present | Trash |
-| xcodeArchives | `.../Archives/*/*.xcarchive` | `Info.plist` inside | Trash, warning, deselected by default |
-| xcodeDeviceSupport | `.../{iOS,watchOS,tvOS,xrOS} DeviceSupport/*` | known parent plus version-shaped name | Trash, old-OS debugging warning |
+| xcodeArchives | `.../Archives/*/*.xcarchive` | `Info.plist` inside | Trash, warning, not preselected |
+| xcodeDeviceSupport | `.../{iOS,watchOS,tvOS,xrOS,visionOS} DeviceSupport/*` | exact known parent plus version-shaped name | Trash, old-OS debugging warning |
 | simulators | unavailable devices from `simctl list devices -j` | parsed JSON, UDID | `xcrun simctl delete <udid>` |
 | swiftPM | `~/Library/Caches/org.swift.swiftpm` | known path | Trash |
 | cocoapods | `~/Library/Caches/CocoaPods` | known path | Trash |
@@ -230,7 +242,7 @@ One window, minimum 820 x 560.
 ```
 
 - The age filter re-filters completed results without rescanning.
-- Rows are checkbox-selectable; a category header selects its group.
+- Rows are checkbox-selectable; nothing is preselected, including Archives.
 - While scanning: progress bar, live totals, Cancel button.
 - After scanning: an aggregate note for folders left alone because a marker was
   missing.
