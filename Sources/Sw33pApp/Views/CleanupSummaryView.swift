@@ -56,7 +56,7 @@ struct CleanupSummaryView: View {
                             .foregroundStyle(.orange)
                     }
 
-                    Text("Sizes are allocated sizes. Hard links are counted once inside each item; shared links across items can be counted twice. APFS clones cannot be detected, so the real recovery can be smaller.")
+                    Text("Sizes are allocated sizes. Hard links are counted once inside each candidate folder/subtree; shared links across candidates can be counted twice. APFS clones cannot be detected, so the real recovery can be smaller.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 

@@ -13,9 +13,9 @@ Slogan: **Shows you the space you'll get back. It doesn't inflate it.**
 The product is deliberately honest about three things:
 
 1. Sizes are allocated sizes, not logical sizes.
-2. Hard links are counted once inside each item; shared links across items can
-   be counted twice, and APFS clones cannot be detected, so the recoverable
-   total can be lower than reported.
+2. Hard links are counted once inside each candidate folder/subtree; shared
+   links across candidates can be counted twice, and APFS clones cannot be
+   detected, so the recoverable total can be lower than reported.
 3. Moving files to the Trash does not free disk space until the Trash is
    emptied. The UI says so in the cleanup summary.
 

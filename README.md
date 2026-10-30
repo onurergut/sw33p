@@ -73,9 +73,9 @@ because crash reports may need them; they are not preselected.
 - Unreadable folders are reported, never guessed at. Full Disk Access may let
   sw33p read more of them.
 - The summary shows what will be removed, the total, and every warning.
-- Sizes are allocated sizes. Hard links are counted once inside each item;
-  shared links across items can be counted twice. APFS clones cannot be
-  detected, so the real recovery may be smaller.
+- Sizes are allocated sizes. Hard links are counted once inside each candidate
+  folder/subtree; shared links across candidates can be counted twice. APFS
+  clones cannot be detected, so the real recovery may be smaller.
 - Moving to the Trash does not free space until the Trash is emptied.
 
 Full contract: [`docs/SAFETY.md`](docs/SAFETY.md).

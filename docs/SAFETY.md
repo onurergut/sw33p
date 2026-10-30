@@ -77,8 +77,8 @@ before they run. sw33p builds the argument list itself; it does not accept
 shell input. Commands run with a 120-second timeout and no stdin. Cancellation
 or timeout sends the process `SIGTERM`; after a 2-second grace period sw33p
 sends `SIGKILL`, and the runner waits for the process to exit before reporting.
-Managed commands cannot be paused mid-run. Exit status, standard output, and
-standard error are reported.
+Managed commands cannot be paused mid-run. Exit status and truncated failure
+output are reported.
 
 ## Network
 
