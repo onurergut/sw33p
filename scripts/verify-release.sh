@@ -3,6 +3,7 @@
 # Usage: scripts/verify-release.sh <path/to/sw33p.app> <version> <arm64|x86_64>
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP="${1:?usage: verify-release.sh <app> <version> <arch>}"
 VERSION="${2:?missing version}"
 ARCH="${3:?missing arch}"
@@ -27,7 +28,7 @@ else
     lipo -info "$EXE" | grep -q 'x86_64' || { printf 'Expected x86_64 binary\n' >&2; exit 1; }
 fi
 
-if otool -l "$EXE" | grep -q "$(pwd)/.build"; then
+if otool -l "$EXE" | grep -F -q -e "$ROOT/.build" -e "/.build/"; then
     printf 'Binary still has a build-directory rpath\n' >&2
     exit 1
 fi

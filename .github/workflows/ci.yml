@@ -25,10 +25,25 @@ jobs:
       - name: Coverage summary
         run: |
           BIN_PATH=$(swift build --show-bin-path)
-          xcrun llvm-cov report \
-            "$BIN_PATH/sw33pPackageTests.xctest/Contents/MacOS/sw33pPackageTests" \
-            -instr-profile "$BIN_PATH/codecov/default.profdata" \
-            Sources Tests
+          PROFDATA="$BIN_PATH/codecov/default.profdata"
+          found=0
+          while IFS= read -r bundle; do
+            name=$(basename "$bundle" .xctest)
+            exe="$bundle/Contents/MacOS/$name"
+            if [[ ! -x "$exe" ]]; then
+              echo "Skipping $bundle (no executable at $exe)"
+              continue
+            fi
+            found=1
+            echo "==> Coverage: $name"
+            xcrun llvm-cov report \
+              "$exe" \
+              -instr-profile "$PROFDATA" \
+              Sources Tests
+          done < <(find "$BIN_PATH" -type d -name '*.xctest' | sort)
+          if [[ "$found" -eq 0 ]]; then
+            echo "No test bundles with executables found under $BIN_PATH"
+          fi
 
       - name: Release build
         run: swift build -c release
