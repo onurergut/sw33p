@@ -12,7 +12,8 @@ public struct CacheRootRule: JunkRule {
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        guard let root = roots.first(where: { $0.standardizedPath == url.standardizedPath }) else {
+        guard MarkerCheck.realDirectory(url),
+              let root = roots.first(where: { $0.standardizedPath == url.standardizedPath }) else {
             return nil
         }
         return .candidate(JunkCandidate(
@@ -20,7 +21,7 @@ public struct CacheRootRule: JunkRule {
             category: category,
             url: url,
             projectURL: nil,
-            projectLabel: "Global cache",
+            projectLabel: category.title,
             validation: .knownRoot(root)
         ))
     }

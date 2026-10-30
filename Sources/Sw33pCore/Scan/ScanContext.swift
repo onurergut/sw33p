@@ -20,7 +20,7 @@ public struct ScanContext: Sendable {
         let root = self.root
         while true {
             if ProjectMarkers.isProject(current) { return current }
-            if current == root { return nil }
+            if current.standardizedPath == root.standardizedPath { return nil }
             let parent = current.deletingLastPathComponent()
             if parent == current || !parent.isDescendant(of: root) { return nil }
             current = parent

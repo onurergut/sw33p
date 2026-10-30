@@ -6,7 +6,7 @@ public struct NodeModulesRule: JunkRule {
     public init() {}
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        guard name == "node_modules" else { return nil }
+        guard name == "node_modules", MarkerCheck.realDirectory(url) else { return nil }
         let project = url.deletingLastPathComponent()
         let marker = project.appendingPathComponent("package.json")
         guard MarkerCheck.file(marker) else {
@@ -32,7 +32,7 @@ public struct RustTargetRule: JunkRule {
     public init() {}
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        guard name == "target" else { return nil }
+        guard name == "target", MarkerCheck.realDirectory(url) else { return nil }
         let project = url.deletingLastPathComponent()
         let marker = project.appendingPathComponent("Cargo.toml")
         guard MarkerCheck.file(marker) else { return nil }
@@ -52,7 +52,7 @@ public struct GradleAndroidRule: JunkRule {
     public init() {}
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        guard name == "build" else { return nil }
+        guard name == "build", MarkerCheck.realDirectory(url) else { return nil }
         let project = url.deletingLastPathComponent()
         let groovy = project.appendingPathComponent("build.gradle")
         let kotlin = project.appendingPathComponent("build.gradle.kts")
@@ -75,6 +75,7 @@ public struct PythonArtifactsRule: JunkRule {
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
         if name == "__pycache__" {
+            guard MarkerCheck.realDirectory(url) else { return nil }
             let project = context.nearestProject(above: url.deletingLastPathComponent())
                 ?? url.deletingLastPathComponent()
             return .candidate(JunkCandidate(
@@ -87,7 +88,9 @@ public struct PythonArtifactsRule: JunkRule {
             ))
         }
 
-        guard name == ".venv" || name == "venv" else { return nil }
+        guard name == ".venv" || name == "venv", MarkerCheck.realDirectory(url) else {
+            return nil
+        }
         let marker = url.appendingPathComponent("pyvenv.cfg")
         guard MarkerCheck.file(marker) else {
             return .skip(ScanNote(

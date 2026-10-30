@@ -51,4 +51,12 @@ public enum MarkerCheck {
     public static func directory(_ url: URL) -> Bool {
         FileStatReader.stat(url)?.isDirectory == true
     }
+
+    /// A directory that is not itself a symlink. Candidate roots must pass this
+    /// check so a symlink can neither be removed as junk nor redirect marker
+    /// validation outside the scanned tree.
+    public static func realDirectory(_ url: URL) -> Bool {
+        guard let stat = FileStatReader.stat(url) else { return false }
+        return stat.isDirectory && !stat.isSymlink
+    }
 }

@@ -31,6 +31,7 @@ public enum Removal: Hashable, Sendable {
 public enum ItemValidation: Hashable, Sendable {
     case marker(URL)
     case knownRoot(URL)
+    case versionedKnownRoot(URL)
     case pythonCache
     case none
 }

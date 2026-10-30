@@ -1,5 +1,12 @@
 import Foundation
 
+private func isVersionDirectoryName(_ name: String) -> Bool {
+    name.range(
+        of: #"^[0-9]+(\.[0-9]+)*( \([^)]*\))?$"#,
+        options: .regularExpression
+    ) != nil
+}
+
 public struct XcodeDerivedDataRule: JunkRule {
     public let id = RuleID("xcode-derived-data")
     public let category: JunkCategory = .xcodeDerivedData
@@ -10,7 +17,9 @@ public struct XcodeDerivedDataRule: JunkRule {
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        guard url.deletingLastPathComponent().standardizedPath == root.standardizedPath else {
+        let parent = url.deletingLastPathComponent()
+        guard parent.standardizedPath == root.standardizedPath,
+              MarkerCheck.realDirectory(url) else {
             return nil
         }
         let info = url.appendingPathComponent("info.plist")
@@ -27,7 +36,7 @@ public struct XcodeDerivedDataRule: JunkRule {
             url: url,
             projectURL: nil,
             projectLabel: label ?? "Xcode DerivedData",
-            validation: .knownRoot(root)
+            validation: .marker(info)
         ))
     }
 }
@@ -46,7 +55,12 @@ public struct XcodeArchivesRule: JunkRule {
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        guard url.isDescendant(of: root), url.pathExtension == "xcarchive" else { return nil }
+        let parent = url.deletingLastPathComponent()
+        guard url.pathExtension == "xcarchive",
+              MarkerCheck.realDirectory(url),
+              parent.deletingLastPathComponent().standardizedPath == root.standardizedPath else {
+            return nil
+        }
         let info = url.appendingPathComponent("Info.plist")
         guard MarkerCheck.file(info) else { return nil }
         return .candidate(JunkCandidate(
@@ -55,7 +69,7 @@ public struct XcodeArchivesRule: JunkRule {
             url: url,
             projectURL: nil,
             projectLabel: url.deletingPathExtension().lastPathComponent,
-            validation: .knownRoot(root),
+            validation: .marker(info),
             warnings: [warning]
         ))
     }
@@ -75,19 +89,19 @@ public struct XcodeDeviceSupportRule: JunkRule {
     }
 
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
-        let parent = url.deletingLastPathComponent().standardizedFileURL
-        guard let root = roots.first(where: { $0.standardizedPath == parent.standardizedPath }) else {
+        let parent = url.deletingLastPathComponent()
+        guard let root = roots.first(where: { $0.standardizedPath == parent.standardizedPath }),
+              MarkerCheck.realDirectory(url),
+              isVersionDirectoryName(name) else {
             return nil
         }
-        let looksLikeVersion = name.contains(".") && name.contains(where: \.isNumber)
-        guard looksLikeVersion, FileStatReader.stat(url)?.isDirectory == true else { return nil }
         return .candidate(JunkCandidate(
             ruleID: id,
             category: category,
             url: url,
             projectURL: nil,
-            projectLabel: parent.deletingLastPathComponent().lastPathComponent,
-            validation: .knownRoot(root),
+            projectLabel: root.lastPathComponent,
+            validation: .versionedKnownRoot(root),
             warnings: [warning]
         ))
     }
