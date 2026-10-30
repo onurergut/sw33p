@@ -9,10 +9,19 @@ final class CleanupValidatorTests: XCTestCase {
         removal: Removal = .filesystem,
         projectURL: URL? = nil
     ) -> JunkItem {
+        item(urls: [url], validation: validation, removal: removal, projectURL: projectURL)
+    }
+
+    private func item(
+        urls: [URL],
+        validation: ItemValidation,
+        removal: Removal = .filesystem,
+        projectURL: URL? = nil
+    ) -> JunkItem {
         JunkItem(
             ruleID: RuleID("test"),
             category: .nodeModules,
-            urls: [url],
+            urls: urls,
             projectURL: projectURL,
             projectLabel: nil,
             lastActivity: Date(),
@@ -90,6 +99,34 @@ final class CleanupValidatorTests: XCTestCase {
         )
     }
 
+    func testMarkerOutsideScanRootIsRefused() throws {
+        let temp = try TempDir()
+        let outside = try TempDir()
+        let junk = try temp.mkdir("app/node_modules")
+        let marker = try outside.write("package.json")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+
+        XCTAssertEqual(
+            validator.validate(item: item(url: junk, validation: .marker(marker)), scanRoot: temp.url),
+            .markerOutsideRoot(marker)
+        )
+    }
+
+    func testMarkerWithSymlinkedAncestorIsRefused() throws {
+        let temp = try TempDir()
+        let junk = try temp.mkdir("app/node_modules")
+        let real = try temp.mkdir("real")
+        try temp.write("real/package.json")
+        let link = try temp.symlink("link", to: real)
+        let marker = link.appendingPathComponent("package.json")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+
+        XCTAssertEqual(
+            validator.validate(item: item(url: junk, validation: .marker(marker)), scanRoot: temp.url),
+            .markerSymlink(marker.standardizedFileURL)
+        )
+    }
+
     func testOutsideRootIsRefused() throws {
         let temp = try TempDir()
         let outside = try TempDir()
@@ -110,6 +147,26 @@ final class CleanupValidatorTests: XCTestCase {
         XCTAssertEqual(
             validator.validate(item: item(url: temp.url, validation: .pythonCache), scanRoot: temp.url),
             .outsideRoot(temp.url)
+        )
+    }
+
+    func testDotDotThroughSymlinkEscapeIsRefused() throws {
+        let temp = try TempDir()
+        let outside = try TempDir()
+        _ = try outside.mkdir("sub")
+        let escapedTarget = try outside.mkdir("target")
+        try temp.symlink("link", to: outside.url.appendingPathComponent("sub"))
+        let candidate = temp.url.appendingPathComponent("link/../target")
+        let marker = try temp.write("package.json")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: escapedTarget.path))
+        XCTAssertEqual(
+            validator.validate(
+                item: item(url: candidate, validation: .marker(marker)),
+                scanRoot: temp.url
+            ),
+            .invalidPath(candidate)
         )
     }
 
@@ -141,6 +198,26 @@ final class CleanupValidatorTests: XCTestCase {
             validator.validate(item: item(url: child, validation: .knownRoot(root)), scanRoot: temp.url),
             .unknownRoot(root)
         )
+    }
+
+    func testKnownRootRefusesXcodeRoots() throws {
+        let temp = try TempDir()
+        let locations = KnownLocations(home: temp.url)
+        let deviceSupport = locations.xcodeDeviceSupport.first {
+            $0.lastPathComponent == "iOS DeviceSupport"
+        }!
+        let roots = [locations.xcodeDerivedData, locations.xcodeArchives, deviceSupport]
+        let validator = CleanupValidator(knownLocations: locations)
+
+        for root in roots {
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            XCTAssertTrue(locations.isKnownRoot(root), root.path)
+            XCTAssertEqual(
+                validator.validate(item: item(url: root, validation: .knownRoot(root)), scanRoot: temp.url),
+                .unknownRoot(root.standardizedFileURL),
+                root.path
+            )
+        }
     }
 
     func testVersionedKnownRootAcceptsVersionDirectory() throws {
@@ -206,7 +283,29 @@ final class CleanupValidatorTests: XCTestCase {
                 item: item(url: candidate, validation: .versionedKnownRoot(root)),
                 scanRoot: temp.url
             ),
-            .outsideRoot(candidate)
+            .notDirectChild(candidate)
+        )
+    }
+
+    func testVersionedKnownRootRejectsSymlinkedCandidate() throws {
+        let temp = try TempDir()
+        let locations = KnownLocations(home: temp.url)
+        let root = locations.xcodeDeviceSupport.first {
+            $0.lastPathComponent == "iOS DeviceSupport"
+        }!
+        let real = try temp.mkdir("real-device-support")
+        let candidate = try temp.symlink(
+            "Library/Developer/Xcode/iOS DeviceSupport/17.0",
+            to: real
+        )
+        let validator = CleanupValidator(knownLocations: locations)
+
+        XCTAssertEqual(
+            validator.validate(
+                item: item(url: candidate, validation: .versionedKnownRoot(root)),
+                scanRoot: temp.url
+            ),
+            .symlink(candidate.standardizedFileURL)
         )
     }
 
@@ -250,5 +349,55 @@ final class CleanupValidatorTests: XCTestCase {
             validator.validate(item: item(url: other, validation: .pythonCache), scanRoot: temp.url),
             .notPythonCache(other)
         )
+    }
+
+    func testErrorExposesFailingURLForMultiURLItem() throws {
+        let temp = try TempDir()
+        let first = try temp.mkdir("a/__pycache__")
+        let second = temp.url.appendingPathComponent("b/__pycache__")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+
+        let error = validator.validate(
+            item: item(urls: [first, second], validation: .pythonCache),
+            scanRoot: temp.url
+        )
+
+        XCTAssertEqual(error, .missing(second))
+        XCTAssertEqual(error?.url, second)
+    }
+
+    func testReceiptDetectsAncestorSwap() throws {
+        let temp = try TempDir()
+        let app = try temp.mkdir("app")
+        let junk = try temp.mkdir("app/node_modules")
+        let marker = try temp.write("app/package.json")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+        let receipt = try validator.inspect(
+            item: item(url: junk, validation: .marker(marker)),
+            scanRoot: temp.url
+        ).get()
+
+        XCTAssertTrue(validator.receiptIsCurrent(receipt))
+
+        try FileManager.default.moveItem(
+            at: app,
+            to: temp.url.appendingPathComponent("app-moved")
+        )
+        XCTAssertFalse(validator.receiptIsCurrent(receipt))
+    }
+
+    func testReceiptDetectsRemovedMarker() throws {
+        let temp = try TempDir()
+        let junk = try temp.mkdir("app/node_modules")
+        let marker = try temp.write("app/package.json")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+        let receipt = try validator.inspect(
+            item: item(url: junk, validation: .marker(marker)),
+            scanRoot: temp.url
+        ).get()
+
+        XCTAssertTrue(validator.receiptIsCurrent(receipt))
+        try FileManager.default.removeItem(at: marker)
+        XCTAssertFalse(validator.receiptIsCurrent(receipt))
     }
 }

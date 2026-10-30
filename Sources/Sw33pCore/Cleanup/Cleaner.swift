@@ -6,6 +6,9 @@ public struct Cleaner: Sendable {
     private let runner: any CommandRunner
     private let validator: CleanupValidator
 
+    /// Internal test hook; not part of the public API.
+    var beforeDeletion: (@Sendable (URL) -> Void)?
+
     public init(
         trash: any TrashClient = FileManagerTrashClient(),
         remover: any FileRemover = FileManagerRemover(),
@@ -16,6 +19,7 @@ public struct Cleaner: Sendable {
         self.remover = remover
         self.runner = runner
         self.validator = validator
+        self.beforeDeletion = nil
     }
 
     public func cleanup(
@@ -30,8 +34,8 @@ public struct Cleaner: Sendable {
         var attempted: Int64 = 0
         var cancelled = false
 
-        for item in plan.items {
-            if shouldCancel() {
+        itemLoop: for item in plan.items {
+            if isCancelled(shouldCancel) {
                 cancelled = true
                 break
             }
@@ -59,6 +63,10 @@ public struct Cleaner: Sendable {
                         ))
                     }
                 } catch {
+                    if isCancelled(shouldCancel) {
+                        cancelled = true
+                        break itemLoop
+                    }
                     failures.append(CleanupFailure(
                         itemID: item.id,
                         url: item.url,
@@ -67,16 +75,46 @@ public struct Cleaner: Sendable {
                 }
 
             case .filesystem:
-                if let validationError = validator.validate(item: item, scanRoot: scanRoot) {
+                let receipt: CleanupValidationReceipt
+                switch validator.inspect(item: item, scanRoot: scanRoot) {
+                case .failure(let error):
                     failures.append(CleanupFailure(
                         itemID: item.id,
-                        url: item.url,
-                        message: String(describing: validationError)
+                        url: error.url,
+                        message: String(describing: error)
                     ))
                     continue
+                case .success(let value):
+                    receipt = value
                 }
+
                 var itemFailed = false
                 for url in item.urls {
+                    if isCancelled(shouldCancel) {
+                        cancelled = true
+                        break
+                    }
+
+                    beforeDeletion?(url)
+
+                    // Validation is repeated immediately before each deletion,
+                    // but path-based filesystem APIs are not atomic with these
+                    // checks. A value can still be swapped between the last
+                    // lstat and trashItem/removeItem. This narrows the TOCTOU
+                    // window; it does not eliminate it. Closing it completely
+                    // would require deleting relative to an open directory
+                    // descriptor.
+                    guard validator.receiptIsCurrent(receipt, for: url) else {
+                        itemFailed = true
+                        let error = CleanupValidationError.changed(url)
+                        failures.append(CleanupFailure(
+                            itemID: item.id,
+                            url: url,
+                            message: String(describing: error)
+                        ))
+                        continue
+                    }
+
                     do {
                         switch plan.mode {
                         case .trash: try trash.trash(url)
@@ -92,6 +130,10 @@ public struct Cleaner: Sendable {
                         ))
                     }
                 }
+
+                if cancelled {
+                    break itemLoop
+                }
                 if !itemFailed {
                     removedIDs.insert(item.id)
                 }
@@ -106,5 +148,9 @@ public struct Cleaner: Sendable {
             attemptedBytes: attempted,
             cancelled: cancelled
         )
+    }
+
+    private func isCancelled(_ shouldCancel: @Sendable () -> Bool) -> Bool {
+        Task.isCancelled || shouldCancel()
     }
 }

@@ -97,6 +97,15 @@ public struct KnownLocations: Sendable {
         depthByPath[url.canonicalScanURL.path] != nil
     }
 
+    /// Only cache roots may be deleted via `.knownRoot` validation. Xcode
+    /// archives, DerivedData, and DeviceSupport are known locations but are
+    /// validated by their own rules instead.
+    public func isCacheRoot(_ url: URL) -> Bool {
+        let target = url.canonicalScanURL
+        let cacheRoots = [swiftPM, cocoaPods] + npmCacheRoots
+        return cacheRoots.contains { $0.canonicalScanURL.path == target.path }
+    }
+
     public func maxDepth(forRoot url: URL) -> Int? {
         depthByPath[url.canonicalScanURL.path]
     }
