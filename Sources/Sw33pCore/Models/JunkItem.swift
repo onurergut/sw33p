@@ -3,7 +3,7 @@ import Foundation
 public struct ItemWarning: Hashable, Sendable, Identifiable {
     public let code: String
     public let message: String
-    public var id: String { code }
+    public var id: String { "\(code)|\(message)" }
 
     public init(code: String, message: String) {
         self.code = code
@@ -80,6 +80,12 @@ public struct JunkItem: Identifiable, Hashable, Sendable {
         self.warnings = warnings
         self.removal = removal
         self.validation = validation
-        self.id = ([ruleID.rawValue] + urls.map(\.path)).joined(separator: "|")
+        let sortedPaths = urls.map(\.path).sorted()
+        var components = [
+            "\(ruleID.rawValue.utf8.count):\(ruleID.rawValue)",
+            "\(sortedPaths.count)",
+        ]
+        components += sortedPaths.map { "\($0.utf8.count):\($0)" }
+        self.id = components.joined(separator: "\u{0}")
     }
 }

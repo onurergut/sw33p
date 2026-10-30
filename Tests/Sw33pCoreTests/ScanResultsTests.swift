@@ -6,7 +6,8 @@ final class ScanResultsTests: XCTestCase {
         _ path: String,
         category: JunkCategory,
         daysAgo: Int,
-        bytes: Int64
+        bytes: Int64,
+        now: Date = Date()
     ) -> JunkItem {
         JunkItem(
             ruleID: RuleID("test"),
@@ -14,7 +15,7 @@ final class ScanResultsTests: XCTestCase {
             urls: [URL(fileURLWithPath: path)],
             projectURL: URL(fileURLWithPath: path).deletingLastPathComponent(),
             projectLabel: nil,
-            lastActivity: Date(timeIntervalSinceNow: -Double(daysAgo) * 86_400),
+            lastActivity: now.addingTimeInterval(-Double(daysAgo) * 86_400),
             allocatedBytes: bytes,
             fileCount: 1,
             warnings: [],
@@ -41,5 +42,14 @@ final class ScanResultsTests: XCTestCase {
 
         XCTAssertEqual(results.totalBytes(age: .days90, category: .nodeModules, now: Date()), 20)
         XCTAssertEqual(results.totalBytes(age: .any, category: nil, now: Date()), 90)
+    }
+
+    func testItemExactlyAtCutoffIsVisible() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let results = ScanResults(items: [
+            item("/a/edge", category: .nodeModules, daysAgo: 90, bytes: 50, now: now),
+        ])
+
+        XCTAssertEqual(results.totalBytes(age: .days90, category: nil, now: now), 50)
     }
 }

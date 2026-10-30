@@ -11,6 +11,7 @@ public struct FileStat: Sendable, Hashable {
     public var isDirectory: Bool { (mode & mode_t(S_IFMT)) == mode_t(S_IFDIR) }
     public var isRegularFile: Bool { (mode & mode_t(S_IFMT)) == mode_t(S_IFREG) }
     public var isSymlink: Bool { (mode & mode_t(S_IFMT)) == mode_t(S_IFLNK) }
+    public var allocatedBytes: Int64 { blocks * 512 }
 }
 
 public enum FileStatReader {
@@ -30,13 +31,5 @@ public enum FileStatReader {
             device: UInt64(info.st_dev),
             inode: UInt64(info.st_ino)
         )
-    }
-
-    public static func isRegularNonSymlink(_ url: URL) -> Bool {
-        stat(url)?.isRegularFile == true
-    }
-
-    public static func isDirectoryNonSymlink(_ url: URL) -> Bool {
-        stat(url)?.isDirectory == true
     }
 }
