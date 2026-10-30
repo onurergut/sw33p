@@ -44,7 +44,7 @@ struct SettingsView: View {
             }
 
             Section {
-                Text("During a scan, sw33p prunes symbolic links and these folders as children: the Trash, iCloud Drive, Photos libraries, and app containers. Choosing one as the scan root is allowed.")
+                Text("sw33p prunes these folders when found under the scan root and rejects a symlink root. Selecting a default-pruned folder as the root is not useful because its children are pruned too: the Trash, iCloud Drive, the default Photos Library, and app containers.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

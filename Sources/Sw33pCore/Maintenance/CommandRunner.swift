@@ -22,14 +22,28 @@ public enum CommandRunnerError: Error, Hashable, Sendable, LocalizedError {
 public struct ProcessCommandRunner: CommandRunner {
     private let timeout: Duration
     private let terminationGrace: Duration
+    private let outputDirectory: URL
 
     public init(timeout: Duration = .seconds(120), terminationGrace: Duration = .seconds(2)) {
+        self.init(
+            timeout: timeout,
+            terminationGrace: terminationGrace,
+            outputDirectory: FileManager.default.temporaryDirectory
+        )
+    }
+
+    init(timeout: Duration, terminationGrace: Duration, outputDirectory: URL) {
         self.timeout = timeout
         self.terminationGrace = terminationGrace
+        self.outputDirectory = outputDirectory
     }
 
     public func run(executable: URL, arguments: [String]) async throws -> CommandOutput {
-        let handle = ProcessHandle(executable: executable, arguments: arguments)
+        let handle = try ProcessHandle(
+            executable: executable,
+            arguments: arguments,
+            outputDirectory: outputDirectory
+        )
         let grace = terminationGrace
         return try await withThrowingTaskGroup(of: CommandOutput.self) { group in
             group.addTask {
@@ -47,10 +61,6 @@ public struct ProcessCommandRunner: CommandRunner {
                 return output
             } catch {
                 group.cancelAll()
-                // Descendants can inherit stdout/stderr and hold the pipes open
-                // after the direct child exits. Close them so a blocked read
-                // cannot outlive the timeout.
-                handle.closePipes()
                 // Wait for the command task's SIGTERM-to-SIGKILL escalation so
                 // the runner never reports completion while the child lingers.
                 _ = try? await group.next()
@@ -63,6 +73,7 @@ public struct ProcessCommandRunner: CommandRunner {
         _ handle: ProcessHandle,
         terminationGrace: Duration
     ) async throws -> CommandOutput {
+        defer { handle.removeTemporaryFiles() }
         try Task.checkCancellation()
         try handle.start()
         do {
@@ -71,36 +82,66 @@ public struct ProcessCommandRunner: CommandRunner {
             }
         } catch {
             await handle.terminateAndWait(grace: terminationGrace)
-            handle.closePipes()
             throw error
         }
-        let stdout = await handle.stdoutData()
-        let stderr = await handle.stderrData()
+        let output = handle.outputData()
         try Task.checkCancellation()
         return CommandOutput(
             status: handle.terminationStatus,
-            stdout: String(decoding: stdout, as: UTF8.self),
-            stderr: String(decoding: stderr, as: UTF8.self)
+            stdout: String(decoding: output.stdout, as: UTF8.self),
+            stderr: String(decoding: output.stderr, as: UTF8.self)
         )
     }
 }
 
-/// Wraps `Process` and its pipes for safe cross-thread start/terminate calls.
+private enum ProcessHandleError: Error {
+    case outputFileUnavailable
+}
+
+/// Wraps `Process` and its output files for safe cross-thread control.
 private final class ProcessHandle: @unchecked Sendable {
     private let process = Process()
-    private let stdoutPipe = Pipe()
-    private let stderrPipe = Pipe()
+    private let outputDirectory: URL
+    private let stdoutURL: URL
+    private let stderrURL: URL
     private let lock = NSLock()
-    private var stdoutTask: Task<Data, Never>?
-    private var stderrTask: Task<Data, Never>?
-    private var pipesClosed = false
+    private var stdoutHandle: FileHandle?
+    private var stderrHandle: FileHandle?
+    private var outputHandlesClosed = false
 
-    init(executable: URL, arguments: [String]) {
+    init(executable: URL, arguments: [String], outputDirectory: URL) throws {
+        let directory = outputDirectory.appendingPathComponent(
+            "sw33p-command-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let stdoutURL = directory.appendingPathComponent("stdout")
+        let stderrURL = directory.appendingPathComponent("stderr")
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        guard fileManager.createFile(atPath: stdoutURL.path, contents: nil),
+              fileManager.createFile(atPath: stderrURL.path, contents: nil),
+              let stdoutHandle = try? FileHandle(forWritingTo: stdoutURL),
+              let stderrHandle = try? FileHandle(forWritingTo: stderrURL)
+        else {
+            try? fileManager.removeItem(at: directory)
+            throw ProcessHandleError.outputFileUnavailable
+        }
+
+        self.outputDirectory = directory
+        self.stdoutURL = stdoutURL
+        self.stderrURL = stderrURL
+        self.stdoutHandle = stdoutHandle
+        self.stderrHandle = stderrHandle
+
         process.executableURL = executable
         process.arguments = arguments
         process.standardInput = FileHandle.nullDevice
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
         var environment = ProcessInfo.processInfo.environment
         environment["HOMEBREW_NO_ANALYTICS"] = "1"
         environment["HOMEBREW_NO_AUTO_UPDATE"] = "1"
@@ -111,12 +152,6 @@ private final class ProcessHandle: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         try process.run()
-        stdoutTask = Task.detached(priority: .utility) { [self] in
-            stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        }
-        stderrTask = Task.detached(priority: .utility) { [self] in
-            stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        }
     }
 
     func terminate() {
@@ -146,17 +181,29 @@ private final class ProcessHandle: @unchecked Sendable {
         }.value
     }
 
-    /// Closes both read handles and our write ends. Descendants that inherited
-    /// the write ends cannot keep a read blocked once the read side is closed.
-    func closePipes() {
+    /// Closes our write ends, then reads the files. Descendants that inherited
+    /// the write ends cannot block a file read the way they block a pipe EOF.
+    func outputData() -> (stdout: Data, stderr: Data) {
+        closeOutputHandles()
+        let stdout = (try? Data(contentsOf: stdoutURL)) ?? Data()
+        let stderr = (try? Data(contentsOf: stderrURL)) ?? Data()
+        return (stdout, stderr)
+    }
+
+    func removeTemporaryFiles() {
+        closeOutputHandles()
+        try? FileManager.default.removeItem(at: outputDirectory)
+    }
+
+    private func closeOutputHandles() {
         lock.lock()
         defer { lock.unlock() }
-        guard !pipesClosed else { return }
-        pipesClosed = true
-        try? stdoutPipe.fileHandleForReading.close()
-        try? stderrPipe.fileHandleForReading.close()
-        try? stdoutPipe.fileHandleForWriting.close()
-        try? stderrPipe.fileHandleForWriting.close()
+        guard !outputHandlesClosed else { return }
+        outputHandlesClosed = true
+        try? stdoutHandle?.close()
+        try? stderrHandle?.close()
+        stdoutHandle = nil
+        stderrHandle = nil
     }
 
     private func forceKill() {
@@ -177,15 +224,5 @@ private final class ProcessHandle: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return process.terminationStatus
-    }
-
-    func stdoutData() async -> Data {
-        let task = lock.withLock { stdoutTask }
-        return await task?.value ?? Data()
-    }
-
-    func stderrData() async -> Data {
-        let task = lock.withLock { stderrTask }
-        return await task?.value ?? Data()
     }
 }

@@ -61,13 +61,17 @@ Homebrew cache bytes are an upper bound; `brew cleanup` may free less.
 
 ## What is pruned from the walk
 
-Symbolic links, `.git` trees, the Trash, iCloud Drive, Mobile Documents, app
-containers, Group Containers, Keychains, Photos libraries, and CoreSimulator
-device data. Simulators are handled through `xcrun simctl`, not by deleting
-files directly.
+Symbolic links, children named `.git`, and directories ending in
+`.photoslibrary` are skipped.
 
-These paths are pruned as children during a scan. Choosing one of them as the
-scan root is allowed; its contents are then scanned.
+The default exclusions matched by path prefix are the Trash, iCloud Drive,
+Mobile Documents, app containers, Group Containers, Keychains, CoreSimulator
+device data, and the default Photos Library. Simulators are handled through
+`xcrun simctl`, not by deleting files directly.
+
+These folders are pruned when encountered under the scan root. Selecting one
+of the prefix-excluded folders as the root is not useful: its children are
+pruned too, so it yields no filesystem items. A symlink scan root is rejected.
 
 Unreadable folders are reported, never guessed at. Full Disk Access may let
 sw33p read protected folders such as Desktop, Documents, Downloads, and

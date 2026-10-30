@@ -49,6 +49,7 @@ final class CommandRunnerTests: XCTestCase {
             guard case .timedOut = error else {
                 return XCTFail("Unexpected runner error: \(error)")
             }
+            XCTAssertTrue(error.localizedDescription.contains("timed out after"))
         }
 
         XCTAssertLessThan(started.duration(to: .now), .seconds(2))
@@ -76,27 +77,41 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertLessThan(started.duration(to: .now), .seconds(2))
     }
 
-    func testDescendantHoldingPipesDoesNotOutliveTimeout() async throws {
+    func testDescendantHoldingOutputDoesNotBlockReturn() async throws {
         let runner = ProcessCommandRunner(
             timeout: .milliseconds(200),
             terminationGrace: .milliseconds(100)
         )
         let started = ContinuousClock.now
 
-        do {
-            _ = try await runner.run(
-                executable: URL(fileURLWithPath: "/bin/sh"),
-                arguments: ["-c", "/bin/sleep 2 & exit 0"]
-            )
-            XCTFail("Expected the held pipes to time out")
-        } catch let error as CommandRunnerError {
-            guard case .timedOut = error else {
-                return XCTFail("Unexpected runner error: \(error)")
-            }
-            XCTAssertTrue(error.localizedDescription.contains("timed out after"))
-        }
+        let output = try await runner.run(
+            executable: URL(fileURLWithPath: "/bin/sh"),
+            arguments: ["-c", "echo ready; /bin/sleep 2 & exit 0"]
+        )
 
+        XCTAssertEqual(output.status, 0)
+        XCTAssertEqual(
+            output.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            "ready"
+        )
         XCTAssertLessThan(started.duration(to: .now), .seconds(1))
+    }
+
+    func testTemporaryOutputFilesAreRemoved() async throws {
+        let temporary = try TempDir()
+        let runner = ProcessCommandRunner(
+            timeout: .seconds(5),
+            terminationGrace: .milliseconds(100),
+            outputDirectory: temporary.url
+        )
+
+        _ = try await runner.run(
+            executable: URL(fileURLWithPath: "/bin/echo"),
+            arguments: ["ok"]
+        )
+
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: temporary.url.path)
+        XCTAssertTrue(remaining.isEmpty, "Unexpected temporary files: \(remaining)")
     }
 
     func testSubprocessEnvironmentDisablesHomebrewAnalyticsAndAutoUpdate() async throws {
