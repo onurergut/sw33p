@@ -1,0 +1,38 @@
+# --- Build outputs ---
+.build/
+.swiftpm/
+dist/
+build/
+DerivedData/
+*.dSYM
+*.xcarchive
+
+# --- Xcode ---
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+
+# --- macOS ---
+.DS_Store
+._*
+
+# --- Editors / tooling ---
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Local development scratch ---
+.probe/
+
+# --- Local secrets (never commit) ---
+.env
+.env.*
+*.p12
+*.cer
+*.mobileprovision
+*.pem
+*.key
+.netrc
