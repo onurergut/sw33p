@@ -42,6 +42,7 @@ struct CleanupRequest {
     let plan: CleanupPlan
     let scanRoot: URL
     let knownLocations: KnownLocations
+    let exclusions: [URL]
     let shouldCancel: @Sendable () -> Bool
 }
 
@@ -100,7 +101,10 @@ final class AppModel {
         }
         self.cleanupProvider = cleanupProvider ?? { request in
             let cleaner = Cleaner(
-                validator: CleanupValidator(knownLocations: request.knownLocations)
+                validator: CleanupValidator(
+                    knownLocations: request.knownLocations,
+                    exclusions: request.exclusions
+                )
             )
             return await cleaner.cleanup(
                 request.plan,
@@ -337,6 +341,7 @@ final class AppModel {
             plan: CleanupPlan(items: eligible, mode: mode),
             scanRoot: scanRoot.resolvingSymlinksInPath(),
             knownLocations: KnownLocations(home: home),
+            exclusions: userExclusions,
             shouldCancel: { Task.isCancelled }
         )
 
@@ -372,7 +377,7 @@ final class AppModel {
         // Existing results must honor a newly added exclusion too, otherwise
         // "Never scan or delete" would only apply to future scans.
         let hidden = Set(results.items.filter { item in
-            item.urls.contains { Self.isDescendant($0, of: exclusion) }
+            item.urls.contains { Self.overlaps($0, exclusion) }
         }.map(\.id))
         results.items.removeAll { hidden.contains($0.id) }
         selectedIDs.subtract(hidden)
@@ -411,13 +416,13 @@ final class AppModel {
         // managed maintenance items (for example unavailable simulators under
         // CoreSimulator) are produced by dedicated, validating detectors.
         if item.urls.contains(where: { url in
-            userExclusions.contains { Self.isDescendant(url, of: $0) }
+            userExclusions.contains { Self.overlaps(url, $0) }
         }) {
             return true
         }
         guard !item.isManaged else { return false }
         return item.urls.contains { url in
-            allExclusions.contains { Self.isDescendant(url, of: $0) }
+            allExclusions.contains { Self.overlaps(url, $0) }
         }
     }
 
@@ -509,11 +514,11 @@ final class AppModel {
         )
     }
 
-    private static func isDescendant(_ candidate: URL, of ancestor: URL) -> Bool {
-        let candidateComponents = candidate.standardizedFileURL.pathComponents
-        let ancestorComponents = ancestor.standardizedFileURL.pathComponents
-        guard candidateComponents.count >= ancestorComponents.count else { return false }
-        return Array(candidateComponents.prefix(ancestorComponents.count)) == ancestorComponents
+    private static func overlaps(_ candidate: URL, _ exclusion: URL) -> Bool {
+        let candidateComponents = candidate.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        let exclusionComponents = exclusion.resolvingSymlinksInPath().standardizedFileURL.pathComponents
+        let count = min(candidateComponents.count, exclusionComponents.count)
+        return candidateComponents.prefix(count).elementsEqual(exclusionComponents.prefix(count))
     }
 
     private func describe(_ error: Error) -> String {

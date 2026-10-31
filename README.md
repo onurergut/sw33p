@@ -50,6 +50,7 @@ Those are different problems with different safety rules.
 | Python `.venv` / `venv` | `pyvenv.cfg` exists inside | Trash |
 | Python `__pycache__` | always, grouped per project | Trash |
 | Gradle / Android `build/` | a sibling `build.gradle` or `build.gradle.kts` exists | Trash |
+| Gradle global cache | exact `~/.gradle/caches` path, not a symlink | Trash |
 | Xcode DerivedData | `info.plist` exists inside | Trash |
 | Xcode Archives | `.xcarchive` with `Info.plist` at `Archives/<date>/<name>.xcarchive`; listed with a warning | Trash |
 | Xcode DeviceSupport | known platform folder (`iOS`, `watchOS`, `tvOS`, `xrOS`, `visionOS`) and version-shaped name | Trash |
@@ -63,7 +64,9 @@ Nothing is selected by default. Xcode Archives are listed with a warning
 because crash reports may need them; they are not preselected.
 
 Homebrew cache bytes are the cache folder's allocated size, an upper bound.
-`brew cleanup` may free less.
+`brew cleanup` may free less. Managed tasks are offered only when their targets
+are inside the selected root. An excluded child also protects its parent from
+cleanup; cache symlinks never grant cleanup permission to their targets.
 
 ## Safety
 

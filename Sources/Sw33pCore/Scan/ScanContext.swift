@@ -27,6 +27,17 @@ public struct ScanContext: Sendable {
         }
     }
 
+    /// Protect an excluded folder even when cleanup would remove its parent.
+    public func overlapsExclusion(_ url: URL) -> Bool {
+        let components = url.canonicalScanURL.pathComponents
+        return exclusionComponents.contains { exclusion in
+            (components.count >= exclusion.count
+                && components.prefix(exclusion.count).elementsEqual(exclusion))
+                || (exclusion.count >= components.count
+                    && exclusion.prefix(components.count).elementsEqual(components))
+        }
+    }
+
     public func nearestProject(above url: URL) -> URL? {
         var current = url.standardizedFileURL
         let root = self.root

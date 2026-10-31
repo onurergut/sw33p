@@ -26,6 +26,7 @@ public struct KnownLocations: Sendable {
         (".npm/_cacache", 0),
         ("Library/pnpm/store", 0),
         (".pnpm-store", 0),
+        (".gradle/caches", 0),
         ("Library/Developer/Xcode/DerivedData", 1),
         ("Library/Developer/Xcode/Archives", 2),
     ]
@@ -39,7 +40,10 @@ public struct KnownLocations: Sendable {
         var depths: [String: Int] = [:]
 
         func add(root relativePath: String, depth: Int) {
-            let url = canonicalHome.appendingPathComponent(relativePath).canonicalScanURL
+            // Resolve the selected home once, never the cache paths below it.
+            // A cache symlink must not grant cleanup permission to its target.
+            let url = URL(fileURLWithPath: canonicalHome.appendingPathComponent(relativePath).path,
+                          isDirectory: false)
             urlsByRelativePath[relativePath] = url
             let path = url.path
             guard depths[path] == nil else { return }
@@ -65,6 +69,7 @@ public struct KnownLocations: Sendable {
 
     public var swiftPM: URL { url("Library/Caches/org.swift.swiftpm") }
     public var cocoaPods: URL { url("Library/Caches/CocoaPods") }
+    public var gradleCache: URL { url(".gradle/caches") }
     public var xcodeDerivedData: URL { url("Library/Developer/Xcode/DerivedData") }
     public var xcodeArchives: URL { url("Library/Developer/Xcode/Archives") }
     public var xcodeDeviceSupport: [URL] {
@@ -85,33 +90,33 @@ public struct KnownLocations: Sendable {
 
     private func url(_ relativePath: String) -> URL {
         urlsByRelativePath[relativePath]
-            ?? home.appendingPathComponent(relativePath).canonicalScanURL
+            ?? URL(fileURLWithPath: home.appendingPathComponent(relativePath).path, isDirectory: false)
     }
 
     public func contains(_ url: URL) -> Bool {
-        let components = url.canonicalScanURL.pathComponents
+        let components = url.standardizedFileURL.pathComponents
         return roots.contains { Self.hasPrefix(components, $0.components) }
     }
 
     public func isKnownRoot(_ url: URL) -> Bool {
-        depthByPath[url.canonicalScanURL.path] != nil
+        depthByPath[url.standardizedFileURL.path] != nil
     }
 
     /// Only cache roots may be deleted via `.knownRoot` validation. Xcode
     /// archives, DerivedData, and DeviceSupport are known locations but are
     /// validated by their own rules instead.
     public func isCacheRoot(_ url: URL) -> Bool {
-        let target = url.canonicalScanURL
-        let cacheRoots = [swiftPM, cocoaPods] + npmCacheRoots
-        return cacheRoots.contains { $0.canonicalScanURL.path == target.path }
+        let target = url.standardizedFileURL
+        let cacheRoots = [swiftPM, cocoaPods, gradleCache] + npmCacheRoots
+        return cacheRoots.contains { $0.standardizedFileURL.path == target.path }
     }
 
     public func maxDepth(forRoot url: URL) -> Int? {
-        depthByPath[url.canonicalScanURL.path]
+        depthByPath[url.standardizedFileURL.path]
     }
 
     public func shouldDescend(into url: URL) -> Bool {
-        shouldDescend(components: url.canonicalScanURL.pathComponents)
+        shouldDescend(components: url.standardizedFileURL.pathComponents)
     }
 
     func shouldDescend(components: [String]) -> Bool {

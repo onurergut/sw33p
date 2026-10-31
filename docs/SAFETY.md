@@ -31,11 +31,13 @@ Validation cases are explicit:
 ## Exclusions
 
 User exclusions are enforced when a cleanup summary is prepared and again when
-cleanup is confirmed. Adding an exclusion cancels a running scan or cleanup, so
-it cannot be bypassed by work already in flight. Default exclusions guard the
-walker and filesystem cleanup; command-backed items are exempt from the default
-walk exclusions because dedicated detectors validate them, but user exclusions
-always bind.
+cleanup is confirmed and validated. An excluded child protects its parent from
+being removed as one cleanup target. Exclusion aliases are canonicalized, while
+known cache paths are not resolved through symlinks. Adding an exclusion asks
+running work to cancel; a deletion already in progress cannot be undone.
+Default exclusions guard the walker and filesystem cleanup; command-backed
+items are exempt from default walk exclusions but must stay inside the selected
+root and obey user exclusions.
 
 ## Default: Trash
 

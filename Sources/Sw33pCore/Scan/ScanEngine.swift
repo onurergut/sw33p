@@ -65,6 +65,17 @@ public struct ScanEngine: Sendable {
                 break
             }
             for item in await detector.detect(context: context) {
+                // Default CoreSimulator walk exclusions do not disable simctl,
+                // but selected scope and user exclusions always bind tasks.
+                let userScope = ScanContext(
+                    root: root,
+                    knownLocations: configuration.knownLocations,
+                    exclusions: configuration.exclusions
+                )
+                guard !isCancelled(), item.urls.allSatisfy({
+                    $0.canonicalScanURL.isDescendant(of: root)
+                        && !userScope.overlapsExclusion($0)
+                }) else { continue }
                 state.add(item)
                 yield(.discovered(item))
             }
@@ -177,6 +188,7 @@ private final class WalkState {
                 if let match = match(url: url, name: name) {
                     switch match {
                     case .candidate(let candidate):
+                        guard !context.overlapsExclusion(candidate.url) else { continue }
                         let shouldCancel = configuration.shouldCancel
                         guard let size = DirectorySizer().size(
                             of: url,

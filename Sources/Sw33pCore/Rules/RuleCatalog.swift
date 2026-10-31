@@ -21,6 +21,11 @@ public enum RuleCatalog {
                 roots: [knownLocations.cocoaPods]
             ),
             CacheRootRule(
+                id: RuleID("gradle-cache"),
+                category: .gradleAndroid,
+                roots: [knownLocations.gradleCache]
+            ),
+            CacheRootRule(
                 id: RuleID("npm-caches"),
                 category: .npmCaches,
                 roots: knownLocations.npmCacheRoots

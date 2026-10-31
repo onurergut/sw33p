@@ -16,6 +16,9 @@ public struct SimulatorDetector: MaintenanceDetector {
     }
 
     public func detect(context: ScanContext) async -> [JunkItem] {
+        let scopedDevices = devicesRoot.canonicalScanURL
+        guard scopedDevices.isDescendant(of: context.root)
+            || context.root.isDescendant(of: scopedDevices) else { return [] }
         guard let output = try? await runner.run(
             executable: xcrun,
             arguments: ["simctl", "list", "devices", "-j"]
@@ -47,6 +50,7 @@ public struct SimulatorDetector: MaintenanceDetector {
                 }
 
                 let directory = devicesRoot.appendingPathComponent(udid, isDirectory: false)
+                guard directory.canonicalScanURL.isDescendant(of: context.root) else { continue }
                 let size = DirectorySizer().size(of: directory)
                     ?? DirectorySize(allocatedBytes: 0, fileCount: 0)
                 let modified = FileStatReader.stat(directory)?.modified ?? Date.distantPast

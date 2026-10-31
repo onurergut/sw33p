@@ -117,6 +117,61 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(result.items[0].url.path.contains("included"))
     }
 
+    func testSymlinkedCacheCannotTurnOrdinaryFolderIntoCleanupTarget() async throws {
+        let temp = try TempDir()
+        let protected = try temp.mkdir("important")
+        try temp.write("important/notes.txt", bytes: 10)
+        try temp.symlink(".npm/_cacache", to: protected)
+
+        let result = try await scan(root: temp.url)
+
+        XCTAssertFalse(result.items.contains { $0.url.path == protected.path })
+    }
+
+    func testGradleGlobalCacheIsListed() async throws {
+        let temp = try TempDir()
+        let cache = try temp.mkdir(".gradle/caches")
+        try temp.write(".gradle/caches/modules/data.bin", bytes: 4096)
+
+        let result = try await scan(root: temp.url)
+
+        let item = try XCTUnwrap(result.items.first { $0.ruleID == RuleID("gradle-cache") })
+        XCTAssertEqual(item.url.path, cache.path)
+        XCTAssertEqual(item.category, .gradleAndroid)
+        XCTAssertGreaterThan(item.allocatedBytes, 0)
+    }
+
+    func testCandidateContainingExcludedFolderIsNotListed() async throws {
+        let temp = try TempDir()
+        try temp.write("app/package.json")
+        let protected = try temp.mkdir("app/node_modules/keep")
+        try temp.write("app/node_modules/keep/private.txt", bytes: 10)
+
+        let result = try await scan(root: temp.url, exclusions: [protected])
+
+        XCTAssertTrue(result.items.isEmpty)
+    }
+
+    func testManagedDetectorCannotReturnItemsOutsideScanRoot() async throws {
+        let temp = try TempDir()
+        let selectedRoot = try temp.mkdir("project")
+        let outside = try temp.mkdir("global-cache")
+        let item = JunkItem(
+            ruleID: RuleID("stub-detector"), category: .homebrew,
+            urls: [outside], projectURL: nil, projectLabel: nil,
+            lastActivity: Date(), allocatedBytes: 1, fileCount: 1,
+            warnings: [], removal: .managed(MaintenanceAction(
+                executable: URL(fileURLWithPath: "/usr/bin/true"),
+                arguments: [], summary: "test"
+            ))
+        )
+        let result = try await collect(ScanEngine(configuration: configuration(
+            root: selectedRoot, detectors: [StubDetector(item: item)], home: temp.url
+        )))
+
+        XCTAssertTrue(result.items.isEmpty)
+    }
+
     func testAnyPhotosLibraryDirectoryIsPruned() async throws {
         let temp = try TempDir()
         try temp.write("Pictures/Trip.photoslibrary/project/package.json")

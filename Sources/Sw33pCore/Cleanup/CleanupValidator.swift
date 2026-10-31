@@ -17,6 +17,7 @@ public enum CleanupValidationError: Error, Hashable, Sendable {
     case invalidPath(URL)
     case noValidation(URL)
     case changed(URL)
+    case excluded(URL)
 
     /// The path that caused the failure, so multi-URL items are attributed
     /// correctly instead of always reporting `item.urls[0]`.
@@ -26,7 +27,7 @@ public enum CleanupValidationError: Error, Hashable, Sendable {
              .outsideRoot(let url), .markerMissing(let url), .markerNotRegular(let url),
              .markerOutsideRoot(let url), .markerSymlink(let url), .unknownRoot(let url),
              .notPythonCache(let url), .notVersionDirectory(let url), .notDirectChild(let url),
-             .invalidPath(let url), .noValidation(let url), .changed(let url):
+             .invalidPath(let url), .noValidation(let url), .changed(let url), .excluded(let url):
             return url
         }
     }
@@ -101,9 +102,11 @@ public struct CleanupValidationReceipt: Hashable, Sendable {
 
 public struct CleanupValidator: Sendable {
     private let knownLocations: KnownLocations
+    private let exclusions: [URL]
 
-    public init(knownLocations: KnownLocations) {
+    public init(knownLocations: KnownLocations, exclusions: [URL] = []) {
         self.knownLocations = knownLocations
+        self.exclusions = exclusions
     }
 
     public func validate(item: JunkItem, scanRoot: URL) -> CleanupValidationError? {
@@ -119,10 +122,23 @@ public struct CleanupValidator: Sendable {
         item: JunkItem,
         scanRoot: URL
     ) -> Result<CleanupValidationReceipt, CleanupValidationError> {
+        let root = scanRoot.canonicalScanURL
+        let userScope = ScanContext(root: root, knownLocations: knownLocations, exclusions: exclusions)
+        for url in item.urls {
+            guard !hasTraversalComponents(url) else {
+                return .failure(.invalidPath(url))
+            }
+            let scopedURL = item.isManaged ? url.canonicalScanURL : url.standardizedFileURL
+            guard scopedURL.isDescendant(of: root) else {
+                return .failure(.outsideRoot(url))
+            }
+            guard !userScope.overlapsExclusion(url) else {
+                return .failure(.excluded(url))
+            }
+        }
         if case .managed = item.removal {
             return .success(CleanupValidationReceipt(itemID: item.id, urls: []))
         }
-        let root = scanRoot.canonicalScanURL
         var receipts: [CleanupURLReceipt] = []
         for url in item.urls {
             switch inspectOne(url: url, validation: item.validation, scanRoot: root) {
@@ -205,13 +221,13 @@ public struct CleanupValidator: Sendable {
                 return .failure(error)
             }
         case .knownRoot(let root):
-            let canonicalRoot = root.canonicalScanURL
+            let canonicalRoot = root.standardizedFileURL
             guard knownLocations.isCacheRoot(canonicalRoot),
                   hasSamePath(target, canonicalRoot) else {
                 return .failure(.unknownRoot(root.standardizedFileURL))
             }
         case .versionedKnownRoot(let root):
-            let canonicalRoot = root.canonicalScanURL
+            let canonicalRoot = root.standardizedFileURL
             guard knownLocations.xcodeDeviceSupport.contains(where: {
                 hasSamePath($0, canonicalRoot)
             }) else {

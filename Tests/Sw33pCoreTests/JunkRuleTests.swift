@@ -463,6 +463,7 @@ final class JunkRuleTests: XCTestCase {
             "node-modules": .nodeModules,
             "rust-target": .rustTarget,
             "gradle-build": .gradleAndroid,
+            "gradle-cache": .gradleAndroid,
             "python": .pythonArtifacts,
             "xcode-derived-data": .xcodeDerivedData,
             "xcode-archives": .xcodeArchives,

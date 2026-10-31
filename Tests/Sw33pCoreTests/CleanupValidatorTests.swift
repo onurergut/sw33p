@@ -33,6 +33,35 @@ final class CleanupValidatorTests: XCTestCase {
         )
     }
 
+    func testExcludedChildPreventsParentDeletion() throws {
+        let temp = try TempDir()
+        let junk = try temp.mkdir("app/node_modules")
+        let marker = try temp.write("app/package.json")
+        let protected = try temp.mkdir("app/node_modules/keep")
+        let validator = CleanupValidator(
+            knownLocations: KnownLocations(home: temp.url), exclusions: [protected]
+        )
+
+        XCTAssertNotNil(validator.validate(
+            item: item(url: junk, validation: .marker(marker)), scanRoot: temp.url
+        ))
+    }
+
+    func testManagedItemOutsideScopeIsRefused() throws {
+        let temp = try TempDir()
+        let root = try temp.mkdir("project")
+        let outside = try temp.mkdir("cache")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+        let action = MaintenanceAction(
+            executable: URL(fileURLWithPath: "/usr/bin/true"), arguments: [], summary: "test"
+        )
+
+        XCTAssertNotNil(validator.validate(
+            item: item(url: outside, validation: .none, removal: .managed(action)),
+            scanRoot: root
+        ))
+    }
+
     func testMarkerMustStillExist() throws {
         let temp = try TempDir()
         let project = try temp.mkdir("app")

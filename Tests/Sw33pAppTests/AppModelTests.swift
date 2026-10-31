@@ -162,6 +162,41 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.selectedIDs.count, 1)
     }
 
+    func testExcludingChildProtectsParentCleanupItem() {
+        let item = makeItem(path: "/tmp/sw33p-child-exclusion/node_modules")
+        let (preferences, defaults, suite) = makePreferences()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(results: ScanResults(items: [item]), preferences: preferences)
+        model.selectedIDs = [item.id]
+
+        model.addExclusion(item.url.appendingPathComponent("keep"))
+        model.presentCleanupSummary()
+
+        XCTAssertTrue(model.results.items.isEmpty)
+        XCTAssertNil(model.pendingPlan)
+    }
+
+    func testAliasedUserExclusionIsHonoredAtCleanup() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sw33p-exclusion-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let real = directory.appendingPathComponent("real")
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let alias = directory.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: real)
+        let item = makeItem(path: real.resolvingSymlinksInPath().appendingPathComponent("node_modules").path)
+        let (preferences, defaults, suite) = makePreferences()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = AppModel(results: ScanResults(items: [item]), preferences: preferences)
+        model.userExclusions = [alias]
+        model.selectedIDs = [item.id]
+
+        model.presentCleanupSummary()
+
+        XCTAssertNil(model.pendingPlan)
+    }
+
     func testAddingExclusionRemovesMatchingResultsAndSelection() {
         let project = URL(fileURLWithPath: "/tmp/sw33p-example/project", isDirectory: true)
         let item = makeItem(path: project.appendingPathComponent("node_modules").path)

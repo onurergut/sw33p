@@ -43,6 +43,12 @@ public struct Cleaner: Sendable {
 
             switch item.removal {
             case .managed(let action):
+                if let error = validator.validate(item: item, scanRoot: scanRoot) {
+                    failures.append(CleanupFailure(
+                        itemID: item.id, url: error.url, message: String(describing: error)
+                    ))
+                    continue
+                }
                 do {
                     let output = try await runner.run(
                         executable: action.executable,

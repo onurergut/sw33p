@@ -126,7 +126,8 @@ final class KnownLocationsTests: XCTestCase {
         assertAllConvenienceRootsAreUsable(deduped)
 
         XCTAssertEqual(deduped.npmCacheRoots.count, 6)
-        XCTAssertEqual(Set(deduped.npmCacheRoots.map(\.path)).count, 5)
+        // Aliased cache paths remain lexical; targets must never inherit permission.
+        XCTAssertEqual(Set(deduped.npmCacheRoots.map(\.path)).count, 6)
     }
 
     private func assertAllConvenienceRootsAreUsable(
@@ -136,7 +137,7 @@ final class KnownLocationsTests: XCTestCase {
     ) {
         let roots =
             locations.allRoots
-            + [locations.swiftPM, locations.cocoaPods, locations.xcodeDerivedData, locations.xcodeArchives]
+            + [locations.swiftPM, locations.cocoaPods, locations.gradleCache, locations.xcodeDerivedData, locations.xcodeArchives]
             + locations.xcodeDeviceSupport
             + locations.npmCacheRoots
 
@@ -146,7 +147,7 @@ final class KnownLocationsTests: XCTestCase {
         }
         XCTAssertEqual(locations.xcodeDeviceSupport.count, 5, file: file, line: line)
         XCTAssertEqual(locations.npmCacheRoots.count, 6, file: file, line: line)
-        XCTAssertEqual(RuleCatalog.rules(knownLocations: locations).count, 10, file: file, line: line)
+        XCTAssertEqual(RuleCatalog.rules(knownLocations: locations).count, 11, file: file, line: line)
     }
 
     func testEveryExposedRootIsConsistent() throws {
@@ -154,7 +155,7 @@ final class KnownLocationsTests: XCTestCase {
         let locations = KnownLocations(home: temp.url)
         let roots =
             locations.allRoots
-            + [locations.swiftPM, locations.cocoaPods, locations.xcodeDerivedData, locations.xcodeArchives]
+            + [locations.swiftPM, locations.cocoaPods, locations.gradleCache, locations.xcodeDerivedData, locations.xcodeArchives]
             + locations.xcodeDeviceSupport
             + locations.npmCacheRoots
 

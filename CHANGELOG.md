@@ -6,7 +6,7 @@ Unreleased.
 
 - First release.
 - Scans `node_modules`, Rust `target/`, Python virtualenvs and `__pycache__`,
-  Gradle/Android `build/`, Xcode DerivedData, Archives, DeviceSupport, SwiftPM,
+  Gradle caches and Android `build/`, Xcode DerivedData, Archives, DeviceSupport, SwiftPM,
   CocoaPods, npm/yarn/pnpm caches, unavailable simulators, and the Homebrew
   cache.
 - Marker-file validation and a compiled-in allowlist for global caches.

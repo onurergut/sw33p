@@ -41,7 +41,9 @@ public struct HomebrewDetector: MaintenanceDetector {
             .filter { !$0.isEmpty }
             .map { URL(fileURLWithPath: $0).standardizedFileURL }
             .first { FileStatReader.stat($0)?.isDirectory == true }
-        guard let cache else { return [] }
+        guard let cache,
+              cache.canonicalScanURL.isDescendant(of: context.root),
+              !context.overlapsExclusion(cache) else { return [] }
 
         let size = DirectorySizer().size(of: cache)
             ?? DirectorySize(allocatedBytes: 0, fileCount: 0)

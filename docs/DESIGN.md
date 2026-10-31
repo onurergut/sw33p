@@ -152,7 +152,9 @@ Adding a rule requires a catalog entry plus fixture tests. No scanner changes.
 ### Traversal
 
 - The selected root is canonicalized once with `resolvingSymlinksInPath`.
-- Traversal never follows symlinks and never resolves candidate paths.
+- Traversal never follows symlinks and never resolves candidate paths. Only
+  the selected home/root is canonicalized; known cache paths stay lexical so a
+  cache symlink cannot grant cleanup permission to another folder.
 - Containment is checked per path component against the canonical root, not by
   string prefix.
 - The walker maintains a stack of project frames. Each frame tracks the newest
@@ -189,7 +191,9 @@ candidate subtree, so two candidates that share a hard link can both count it.
 User exclusions are enforced when the summary is prepared and again at confirm
 time; adding an exclusion cancels a running scan or cleanup. Default
 exclusions guard the walker and filesystem cleanup, while managed command items
-are exempt from default walk exclusions but not from user exclusions.
+are exempt from default walk exclusions but not from user exclusions. A parent
+containing an excluded child is protected too. Managed targets must remain
+inside the selected scan root, and cleanup rechecks scope and user exclusions.
 
 `Cleaner` re-validates every filesystem item immediately before deleting:
 
@@ -220,6 +224,7 @@ are reported per item; partial failure is never collapsed into success.
 | pythonArtifacts | `.venv` or `venv` | `pyvenv.cfg` inside | Trash |
 | pythonArtifacts | `__pycache__` | project context; aggregated per project | Trash |
 | gradleAndroid | directory named `build` | sibling `build.gradle` or `build.gradle.kts` | Trash |
+| gradleAndroid | `~/.gradle/caches` | exact known path, non-symlink directory | Trash |
 | xcodeDerivedData | `~/Library/Developer/Xcode/DerivedData/*` | `info.plist` inside; show `WorkspacePath` when present | Trash |
 | xcodeArchives | `.../Archives/*/*.xcarchive` | `Info.plist` inside | Trash, warning, not preselected |
 | xcodeDeviceSupport | `.../{iOS,watchOS,tvOS,xrOS,visionOS} DeviceSupport/*` | exact known parent plus version-shaped name | Trash, old-OS debugging warning |

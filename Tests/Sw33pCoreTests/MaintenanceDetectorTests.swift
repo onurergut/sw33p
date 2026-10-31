@@ -29,6 +29,41 @@ final class MaintenanceDetectorTests: XCTestCase {
         )
     }
 
+    func testSimulatorDetectorDoesNotInspectDevicesOutsideSelectedRoot() async throws {
+        let home = try TempDir()
+        let selected = try home.mkdir("project")
+        let detector = SimulatorDetector(
+            devicesRoot: home.url.appendingPathComponent("Devices"),
+            runner: ScriptedRunner { _, _ in
+                XCTFail("Out-of-scope simulators must not be inspected")
+                return CommandOutput(status: 0, stdout: "", stderr: "")
+            }
+        )
+        let scope = ScanContext(root: selected, knownLocations: KnownLocations(home: home.url), exclusions: [])
+
+        let items = await detector.detect(context: scope)
+
+        XCTAssertTrue(items.isEmpty)
+    }
+
+    func testHomebrewCacheOutsideSelectedRootIsNotListed() async throws {
+        let home = try TempDir()
+        let selected = try home.mkdir("project")
+        let cache = try home.mkdir("cache")
+        let brew = try home.write("bin/brew")
+        try makeExecutable(brew)
+        let detector = HomebrewDetector(
+            runner: ScriptedRunner { _, _ in
+                CommandOutput(status: 0, stdout: cache.path, stderr: "")
+            }, brewExecutable: brew
+        )
+        let scope = ScanContext(root: selected, knownLocations: KnownLocations(home: home.url), exclusions: [])
+
+        let items = await detector.detect(context: scope)
+
+        XCTAssertTrue(items.isEmpty)
+    }
+
     func testSimulatorDetectorFindsOnlyUnavailableDevices() async throws {
         let home = try TempDir()
         let devices = home.url.appendingPathComponent("Library/Developer/CoreSimulator/Devices")
