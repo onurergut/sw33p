@@ -13,4 +13,9 @@ public enum PackageBundles {
         let ext = (name as NSString).pathExtension.lowercased()
         return !ext.isEmpty && extensions.contains(ext)
     }
+
+    /// Includes the selected directory itself and ancestors above the scan root.
+    public static func containsBundleComponent(_ url: URL) -> Bool {
+        url.standardizedFileURL.pathComponents.contains { isBundle(name: $0) }
+    }
 }

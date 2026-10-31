@@ -14,6 +14,8 @@ Unreleased.
 - App, framework, and extension bundles and hidden home folders such as
   `~/.vscode` and `~/.config` are not scanned, so code shipped with apps,
   editor extensions, and installed tools is never listed.
+- Protected bundles remain blocked even when the bundle or a folder inside it
+  is explicitly selected as the scan root; cleanup rechecks this boundary.
 - `__pycache__` folders outside a project are grouped per loose library
   instead of one row per folder.
 - Cancellable background scan with live progress.

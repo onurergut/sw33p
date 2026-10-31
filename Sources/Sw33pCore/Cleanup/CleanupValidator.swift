@@ -18,6 +18,7 @@ public enum CleanupValidationError: Error, Hashable, Sendable {
     case noValidation(URL)
     case changed(URL)
     case excluded(URL)
+    case protectedBundle(URL)
 
     /// The path that caused the failure, so multi-URL items are attributed
     /// correctly instead of always reporting `item.urls[0]`.
@@ -27,7 +28,8 @@ public enum CleanupValidationError: Error, Hashable, Sendable {
              .outsideRoot(let url), .markerMissing(let url), .markerNotRegular(let url),
              .markerOutsideRoot(let url), .markerSymlink(let url), .unknownRoot(let url),
              .notPythonCache(let url), .notVersionDirectory(let url), .notDirectChild(let url),
-             .invalidPath(let url), .noValidation(let url), .changed(let url), .excluded(let url):
+             .invalidPath(let url), .noValidation(let url), .changed(let url), .excluded(let url),
+             .protectedBundle(let url):
             return url
         }
     }
@@ -129,6 +131,9 @@ public struct CleanupValidator: Sendable {
                 return .failure(.invalidPath(url))
             }
             let scopedURL = item.isManaged ? url.canonicalScanURL : url.standardizedFileURL
+            guard item.isManaged || !PackageBundles.containsBundleComponent(scopedURL) else {
+                return .failure(.protectedBundle(url))
+            }
             guard scopedURL.isDescendant(of: root) else {
                 return .failure(.outsideRoot(url))
             }

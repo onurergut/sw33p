@@ -197,6 +197,22 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(result.items.isEmpty, result.items.map(\.url.path).description)
     }
 
+    func testBundleOrItsContentsSelectedAsRootAreNotScanned() async throws {
+        let temp = try TempDir()
+        for name in ["Editor.app", "Kit.framework", "Extension.APPEX"] {
+            let project = "\(name)/Contents/Resources/app"
+            try temp.write("\(project)/package.json")
+            try temp.write("\(project)/node_modules/x.js", bytes: 10)
+            for relativeRoot in [name, project] {
+                let result = try await scan(
+                    root: temp.url.appendingPathComponent(relativeRoot), home: temp.url
+                )
+                XCTAssertTrue(result.items.isEmpty, relativeRoot)
+                XCTAssertFalse(result.notes.isEmpty, "Protected root must explain why scanning was skipped")
+            }
+        }
+    }
+
     func testEditorExtensionsAndToolInstallsInHiddenHomeFoldersAreNotListed() async throws {
         let home = try TempDir()
         try home.write(".vscode/extensions/prettier/package.json")

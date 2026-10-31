@@ -47,6 +47,14 @@ public struct ScanEngine: Sendable {
                 + configuration.exclusions
         )
         let state = WalkState(configuration: configuration, context: context)
+        guard !PackageBundles.containsBundleComponent(root) else {
+            yield(.note(ScanNote(
+                message: "The selected folder is inside an app, framework, or extension bundle and was left alone.",
+                count: 1
+            )))
+            yield(.finished(state.summary(cancelled: isCancelled())))
+            return
+        }
         state.scanRoot(yield: yield)
 
         if state.cancelled || isCancelled() {

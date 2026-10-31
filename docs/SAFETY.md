@@ -69,7 +69,9 @@ Symbolic links, children named `.git`, and directories ending in
 Bundles (`.app`, `.appex`, `.bundle`, `.framework`, `.kext`, `.plugin`,
 `.prefPane`, `.systemextension`, `.xpc`) are never descended into. Electron
 apps and editors ship a `node_modules` next to a `package.json` inside their
-bundle; removing it breaks the app and its code signature.
+bundle; removing it breaks the app and its code signature. Selecting a bundle
+or any folder inside it as the root is also blocked with an explanatory note.
+Cleanup independently rejects filesystem targets inside protected bundles.
 
 Hidden folders directly inside the home folder (`~/.vscode`, `~/.cursor`,
 `~/.config`, `~/.local`, `~/.cache`, ...) hold editor extensions and installed

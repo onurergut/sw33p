@@ -62,6 +62,20 @@ final class CleanupValidatorTests: XCTestCase {
         ))
     }
 
+    func testShippedBundleContentsCannotBeDeletedThroughAnExplicitRoot() throws {
+        let temp = try TempDir()
+        let project = try temp.mkdir("Editor.app/Contents/Resources/app")
+        let marker = try temp.write("Editor.app/Contents/Resources/app/package.json")
+        let junk = try temp.mkdir("Editor.app/Contents/Resources/app/node_modules")
+        let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
+
+        for root in [temp.url, temp.url.appendingPathComponent("Editor.app"), project] {
+            XCTAssertNotNil(validator.validate(
+                item: item(url: junk, validation: .marker(marker)), scanRoot: root
+            ), root.path)
+        }
+    }
+
     func testMarkerMustStillExist() throws {
         let temp = try TempDir()
         let project = try temp.mkdir("app")
