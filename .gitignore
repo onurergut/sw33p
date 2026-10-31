@@ -27,6 +27,13 @@ xcuserdata/
 # --- Local development scratch ---
 .probe/
 
+# --- Local agent tooling (never published) ---
+.claude/
+.agents/
+.superpowers/
+AGENTS.md
+CLAUDE.md
+
 # --- Local secrets (never commit) ---
 .env
 .env.*
