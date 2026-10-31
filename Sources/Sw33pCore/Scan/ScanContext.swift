@@ -38,6 +38,19 @@ public struct ScanContext: Sendable {
         }
     }
 
+    /// Climbs out of Python packages (folders with `__init__.py`) to the first
+    /// folder that is not one, so caches of one loose library group together.
+    public func pythonSourceRoot(containing url: URL) -> URL {
+        var current = url.standardizedFileURL
+        while MarkerCheck.file(current.appendingPathComponent("__init__.py")),
+              current.standardizedPath != root.standardizedPath {
+            let parent = current.deletingLastPathComponent()
+            guard parent != current, parent.isDescendant(of: root) else { break }
+            current = parent
+        }
+        return current
+    }
+
     public func nearestProject(above url: URL) -> URL? {
         var current = url.standardizedFileURL
         let root = self.root

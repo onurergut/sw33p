@@ -66,6 +66,17 @@ Homebrew cache bytes are an upper bound; `brew cleanup` may free less.
 Symbolic links, children named `.git`, and directories ending in
 `.photoslibrary` are skipped.
 
+Bundles (`.app`, `.appex`, `.bundle`, `.framework`, `.kext`, `.plugin`,
+`.prefPane`, `.systemextension`, `.xpc`) are never descended into. Electron
+apps and editors ship a `node_modules` next to a `package.json` inside their
+bundle; removing it breaks the app and its code signature.
+
+Hidden folders directly inside the home folder (`~/.vscode`, `~/.cursor`,
+`~/.config`, `~/.local`, `~/.cache`, ...) hold editor extensions and installed
+tools. Like `~/Library`, they are only walked toward the known cache roots
+below them. Selecting a hidden folder, or a folder inside one, as the scan root
+scans it normally.
+
 The default exclusions matched by path prefix are the Trash, iCloud Drive,
 Mobile Documents, app containers, Group Containers, Keychains, all of
 `~/Library/Developer/CoreSimulator`, and the default Photos Library. Simulators

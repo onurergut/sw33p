@@ -8,6 +8,7 @@ public struct KnownLocations: Sendable {
     private let urlsByRelativePath: [String: URL]
     private let depthByPath: [String: Int]
     private let libraryComponents: [String]
+    private let homeComponents: [String]
 
     private struct Root: Sendable {
         let url: URL
@@ -24,6 +25,7 @@ public struct KnownLocations: Sendable {
         ("Library/Caches/pnpm", 0),
         (".cache/yarn", 0),
         (".npm/_cacache", 0),
+        (".npm/_npx", 0),
         ("Library/pnpm/store", 0),
         (".pnpm-store", 0),
         (".gradle/caches", 0),
@@ -63,6 +65,7 @@ public struct KnownLocations: Sendable {
         self.urlsByRelativePath = urlsByRelativePath
         self.depthByPath = depths
         self.libraryComponents = canonicalHome.appendingPathComponent("Library").pathComponents
+        self.homeComponents = canonicalHome.pathComponents
     }
 
     public var allRoots: [URL] { rootURLs }
@@ -80,6 +83,7 @@ public struct KnownLocations: Sendable {
     public var npmCacheRoots: [URL] {
         [
             ".npm/_cacache",
+            ".npm/_npx",
             "Library/Caches/Yarn",
             ".cache/yarn",
             "Library/pnpm/store",
@@ -119,7 +123,10 @@ public struct KnownLocations: Sendable {
         shouldDescend(components: url.standardizedFileURL.pathComponents)
     }
 
-    func shouldDescend(components: [String]) -> Bool {
+    /// `scanRoot` lets an explicitly selected hidden home folder be walked;
+    /// otherwise hidden home folders hold tool installs and are only walked
+    /// toward known cache roots, like `~/Library`.
+    func shouldDescend(components: [String], scanRoot: [String]? = nil) -> Bool {
         for root in roots where components == root.components {
             return root.depth > 0
         }
@@ -133,7 +140,21 @@ public struct KnownLocations: Sendable {
         if Self.hasPrefix(components, libraryComponents) {
             return false
         }
+        if let hidden = hiddenHomeFolder(components),
+           !(scanRoot.map { Self.hasPrefix($0, hidden) } ?? false) {
+            return false
+        }
         return true
+    }
+
+    /// Components of the `~/.name` folder that contains `components`, if any.
+    private func hiddenHomeFolder(_ components: [String]) -> [String]? {
+        guard components.count > homeComponents.count,
+              Self.hasPrefix(components, homeComponents),
+              components[homeComponents.count].hasPrefix(".") else {
+            return nil
+        }
+        return Array(components.prefix(homeComponents.count + 1))
     }
 
     private static func hasPrefix(_ components: [String], _ prefix: [String]) -> Bool {

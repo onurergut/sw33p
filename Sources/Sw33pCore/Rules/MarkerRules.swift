@@ -76,8 +76,9 @@ public struct PythonArtifactsRule: JunkRule {
     public func match(url: URL, name: String, context: ScanContext) -> RuleMatch? {
         if name == "__pycache__" {
             guard MarkerCheck.realDirectory(url) else { return nil }
-            let project = context.nearestProject(above: url.deletingLastPathComponent())
-                ?? url.deletingLastPathComponent()
+            let parent = url.deletingLastPathComponent()
+            let project = context.nearestProject(above: parent)
+                ?? context.pythonSourceRoot(containing: parent)
             return .candidate(JunkCandidate(
                 ruleID: RuleID("python-pycache"),
                 category: category,

@@ -222,7 +222,7 @@ are reported per item; partial failure is never collapsed into success.
 | nodeModules | directory named `node_modules` | sibling `package.json` | Trash |
 | rustTarget | directory named `target` | sibling `Cargo.toml` | Trash |
 | pythonArtifacts | `.venv` or `venv` | `pyvenv.cfg` inside | Trash |
-| pythonArtifacts | `__pycache__` | project context; aggregated per project | Trash |
+| pythonArtifacts | `__pycache__` | project context; aggregated per project, or per package source root when there is no project marker | Trash |
 | gradleAndroid | directory named `build` | sibling `build.gradle` or `build.gradle.kts` | Trash |
 | gradleAndroid | `~/.gradle/caches` | exact known path, non-symlink directory | Trash |
 | xcodeDerivedData | `~/Library/Developer/Xcode/DerivedData/*` | `info.plist` inside; show `WorkspacePath` when present | Trash |

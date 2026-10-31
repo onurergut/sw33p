@@ -183,6 +183,62 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertTrue(result.items.isEmpty)
     }
 
+    func testAppAndFrameworkBundleContentsAreNotScanned() async throws {
+        let temp = try TempDir()
+        for bundle in ["Applications/Editor.app/Contents/Resources/app",
+                       "Tools/Kit.framework/Resources/app",
+                       "Tools/Extension.APPEX/Contents/app"] {
+            try temp.write("\(bundle)/package.json")
+            try temp.write("\(bundle)/node_modules/x.js", bytes: 10)
+        }
+
+        let result = try await scan(root: temp.url)
+
+        XCTAssertTrue(result.items.isEmpty, result.items.map(\.url.path).description)
+    }
+
+    func testEditorExtensionsAndToolInstallsInHiddenHomeFoldersAreNotListed() async throws {
+        let home = try TempDir()
+        try home.write(".vscode/extensions/prettier/package.json")
+        try home.write(".vscode/extensions/prettier/node_modules/x.js", bytes: 10)
+        try home.write(".config/opencode/package.json")
+        try home.write(".config/opencode/node_modules/x.js", bytes: 10)
+        try home.write(".local/lib/tool/__pycache__/a.pyc", bytes: 10)
+        try home.write(".cache/opencode/package.json")
+        try home.write(".cache/opencode/node_modules/x.js", bytes: 10)
+        try home.write("code/app/package.json")
+        try home.write("code/app/node_modules/x.js", bytes: 10)
+
+        let result = try await scan(root: home.url, home: home.url)
+
+        XCTAssertEqual(result.items.map(\.url.lastPathComponent), ["node_modules"])
+        XCTAssertEqual(result.items.first?.projectURL?.lastPathComponent, "app")
+    }
+
+    func testHiddenHomeFolderSelectedAsRootIsScanned() async throws {
+        let home = try TempDir()
+        try home.write(".config/tool/package.json")
+        try home.write(".config/tool/node_modules/x.js", bytes: 10)
+
+        let result = try await scan(root: home.url.appendingPathComponent(".config"), home: home.url)
+
+        XCTAssertEqual(result.items.count, 1)
+        XCTAssertEqual(result.items.first?.category, .nodeModules)
+    }
+
+    func testNpxCacheIsListedAsOneCacheItem() async throws {
+        let home = try TempDir()
+        try home.write(".npm/_npx/1a2b/package.json")
+        try home.write(".npm/_npx/1a2b/node_modules/x.js", bytes: 10)
+
+        let result = try await scan(root: home.url, home: home.url)
+
+        XCTAssertEqual(result.items.count, 1)
+        let item = try XCTUnwrap(result.items.first)
+        XCTAssertEqual(item.category, .npmCaches)
+        XCTAssertEqual(item.url.lastPathComponent, "_npx")
+    }
+
     func testCanonicalRootHonorsAliasedExclusionAndFindsAliasedKnownCache() async throws {
         let temp = try TempDir()
         let real = try temp.mkdir("real")
@@ -294,6 +350,25 @@ final class ScanEngineTests: XCTestCase {
         XCTAssertEqual(pycache.count, 1)
         XCTAssertEqual(pycache[0].urls.count, 2)
         XCTAssertEqual(pycache[0].projectURL?.lastPathComponent, "py")
+    }
+
+    func testPycacheWithoutProjectGroupsUnderPackageSourceRoot() async throws {
+        let temp = try TempDir()
+        try temp.write("work/libs/fontTools/__init__.py")
+        try temp.write("work/libs/fontTools/__pycache__/a.pyc", bytes: 10)
+        try temp.write("work/libs/fontTools/pens/__init__.py")
+        try temp.write("work/libs/fontTools/pens/__pycache__/b.pyc", bytes: 10)
+        try temp.write("work/libs/fontTools/pens/deep/__init__.py")
+        try temp.write("work/libs/fontTools/pens/deep/__pycache__/c.pyc", bytes: 10)
+        try temp.write("work/scripts/__pycache__/d.pyc", bytes: 10)
+
+        let result = try await scan(root: temp.url)
+
+        let pycache = result.items.filter { $0.ruleID == RuleID("python-pycache") }
+        XCTAssertEqual(
+            Set(pycache.map { "\($0.projectURL?.lastPathComponent ?? "-"):\($0.urls.count)" }),
+            ["libs:3", "scripts:1"]
+        )
     }
 
     func testNestedProjectActivityAttribution() async throws {

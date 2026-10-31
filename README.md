@@ -48,7 +48,7 @@ Those are different problems with different safety rules.
 | `node_modules` | a sibling `package.json` exists | Trash |
 | Rust `target/` | a sibling `Cargo.toml` exists | Trash |
 | Python `.venv` / `venv` | `pyvenv.cfg` exists inside | Trash |
-| Python `__pycache__` | always, grouped per project | Trash |
+| Python `__pycache__` | always, grouped per project (or per loose library when there is no project marker) | Trash |
 | Gradle / Android `build/` | a sibling `build.gradle` or `build.gradle.kts` exists | Trash |
 | Gradle global cache | exact `~/.gradle/caches` path, not a symlink | Trash |
 | Xcode DerivedData | `info.plist` exists inside | Trash |
@@ -57,7 +57,7 @@ Those are different problems with different safety rules.
 | Unavailable simulators | reported by `simctl` | `xcrun simctl delete <udid>` |
 | SwiftPM cache | known cache path | Trash |
 | CocoaPods cache | known cache path | Trash |
-| npm / yarn / pnpm caches | known cache paths | Trash |
+| npm / yarn / pnpm caches | known cache paths, including the `npx` cache (`~/.npm/_npx`) | Trash |
 | Homebrew cache | `brew` is installed; size is an upper bound | `brew cleanup` |
 
 Nothing is selected by default. Xcode Archives are listed with a warning
@@ -72,6 +72,11 @@ cleanup; cache symlinks never grant cleanup permission to their targets.
 
 - The default is the Trash. Permanent deletion is a separate, confirmed choice.
 - Symlinks are never followed. A candidate must stay inside the scan root.
+- App, framework, and extension bundles are never scanned, and hidden folders
+  in your home folder (`~/.vscode`, `~/.config`, `~/.local`, ...) are only
+  entered to reach known caches. Code shipped inside apps, editor extensions,
+  and installed CLI tools is not rebuildable, even with a `package.json` next
+  to it.
 - Marker files are re-checked immediately before deletion.
 - Folders you exclude are honored while scanning and enforced again when a
   cleanup summary is prepared and confirmed. Adding an exclusion cancels a

@@ -96,6 +96,34 @@ final class KnownLocationsTests: XCTestCase {
         XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent("Documents")))
     }
 
+    func testHiddenHomeFoldersAreOnlyDescendedTowardKnownRoots() throws {
+        let temp = try TempDir()
+        let locations = KnownLocations(home: temp.url)
+        let home = locations.home
+
+        XCTAssertFalse(locations.shouldDescend(into: home.appendingPathComponent(".vscode")))
+        XCTAssertFalse(locations.shouldDescend(into: home.appendingPathComponent(".config/opencode")))
+        XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent(".cache")))
+        XCTAssertFalse(locations.shouldDescend(into: home.appendingPathComponent(".cache/opencode")))
+        XCTAssertTrue(locations.shouldDescend(into: home.appendingPathComponent("code/.github")))
+    }
+
+    func testHiddenHomeFolderIsDescendedWhenItContainsTheScanRoot() throws {
+        let temp = try TempDir()
+        let locations = KnownLocations(home: temp.url)
+        let home = locations.home
+        let root = home.appendingPathComponent(".config").pathComponents
+
+        XCTAssertTrue(locations.shouldDescend(
+            components: home.appendingPathComponent(".config/tool").pathComponents,
+            scanRoot: root
+        ))
+        XCTAssertFalse(locations.shouldDescend(
+            components: home.appendingPathComponent(".local/tool").pathComponents,
+            scanRoot: root
+        ))
+    }
+
     func testAliasedConfiguredRootsKeepEveryConvenienceURL() throws {
         let first = try TempDir()
         let firstLocations = KnownLocations(home: first.url)
@@ -125,9 +153,9 @@ final class KnownLocationsTests: XCTestCase {
         let deduped = KnownLocations(home: secondHome)
         assertAllConvenienceRootsAreUsable(deduped)
 
-        XCTAssertEqual(deduped.npmCacheRoots.count, 6)
+        XCTAssertEqual(deduped.npmCacheRoots.count, 7)
         // Aliased cache paths remain lexical; targets must never inherit permission.
-        XCTAssertEqual(Set(deduped.npmCacheRoots.map(\.path)).count, 6)
+        XCTAssertEqual(Set(deduped.npmCacheRoots.map(\.path)).count, 7)
     }
 
     private func assertAllConvenienceRootsAreUsable(
@@ -146,7 +174,7 @@ final class KnownLocationsTests: XCTestCase {
             XCTAssertFalse(root.path.isEmpty, file: file, line: line)
         }
         XCTAssertEqual(locations.xcodeDeviceSupport.count, 5, file: file, line: line)
-        XCTAssertEqual(locations.npmCacheRoots.count, 6, file: file, line: line)
+        XCTAssertEqual(locations.npmCacheRoots.count, 7, file: file, line: line)
         XCTAssertEqual(RuleCatalog.rules(knownLocations: locations).count, 11, file: file, line: line)
     }
 

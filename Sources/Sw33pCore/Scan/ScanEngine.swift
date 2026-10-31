@@ -111,6 +111,7 @@ private final class WalkState {
 
     let configuration: ScanConfiguration
     let context: ScanContext
+    private let rootComponents: [String]
     var cancelled = false
     private var items: [JunkItem] = []
     private var issueCount = 0
@@ -123,6 +124,7 @@ private final class WalkState {
     init(configuration: ScanConfiguration, context: ScanContext) {
         self.configuration = configuration
         self.context = context
+        self.rootComponents = context.root.pathComponents
     }
 
     func scanRoot(yield: @escaping @Sendable (ScanEvent) -> Void) {
@@ -221,9 +223,11 @@ private final class WalkState {
                     case .skip(let note):
                         add(note)
                     }
-                } else if configuration.knownLocations.shouldDescend(
-                    components: components
-                ) {
+                } else if !PackageBundles.isBundle(name: name),
+                          configuration.knownLocations.shouldDescend(
+                              components: components,
+                              scanRoot: rootComponents
+                          ) {
                     walk(url, activities: &activities, yield: yield)
                 }
             } else if stat.isRegularFile {
