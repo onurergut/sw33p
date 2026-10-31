@@ -104,10 +104,19 @@ final class CleanupValidatorTests: XCTestCase {
         let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
         let link = temp.url.appendingPathComponent("link")
 
-        XCTAssertEqual(
-            validator.validate(item: item(url: link, validation: .marker(marker)), scanRoot: temp.url),
-            .symlink(link)
-        )
+        // Foundation versions differ in preserving directory hints on URLs.
+        // Assert the refusal case and path, not serialized trailing slashes.
+        for isDirectory in [false, true] {
+            let candidate = URL(fileURLWithPath: link.path, isDirectory: isDirectory)
+            let error = validator.validate(
+                item: item(url: candidate, validation: .marker(marker)), scanRoot: temp.url
+            )
+            guard case .symlink(let rejectedURL)? = error else {
+                XCTFail("Expected symlink refusal, got \(String(describing: error))")
+                continue
+            }
+            XCTAssertEqual(rejectedURL.path, link.path)
+        }
     }
 
     func testSymlinkedAncestorInsidePathIsRefused() throws {
@@ -187,10 +196,17 @@ final class CleanupValidatorTests: XCTestCase {
         let temp = try TempDir()
         let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
 
-        XCTAssertEqual(
-            validator.validate(item: item(url: temp.url, validation: .pythonCache), scanRoot: temp.url),
-            .outsideRoot(temp.url)
-        )
+        for isDirectory in [false, true] {
+            let candidate = URL(fileURLWithPath: temp.url.path, isDirectory: isDirectory)
+            let error = validator.validate(
+                item: item(url: candidate, validation: .pythonCache), scanRoot: temp.url
+            )
+            guard case .outsideRoot(let rejectedURL)? = error else {
+                XCTFail("Expected scan-root refusal, got \(String(describing: error))")
+                continue
+            }
+            XCTAssertEqual(rejectedURL.path, temp.url.path)
+        }
     }
 
     func testDotDotThroughSymlinkEscapeIsRefused() throws {
@@ -219,10 +235,17 @@ final class CleanupValidatorTests: XCTestCase {
         let child = try temp.mkdir("not-a-cache/child")
         let validator = CleanupValidator(knownLocations: KnownLocations(home: temp.url))
 
-        XCTAssertEqual(
-            validator.validate(item: item(url: child, validation: .knownRoot(root)), scanRoot: temp.url),
-            .unknownRoot(root)
-        )
+        for isDirectory in [false, true] {
+            let cacheRoot = URL(fileURLWithPath: root.path, isDirectory: isDirectory)
+            let error = validator.validate(
+                item: item(url: child, validation: .knownRoot(cacheRoot)), scanRoot: temp.url
+            )
+            guard case .unknownRoot(let rejectedURL)? = error else {
+                XCTFail("Expected unknown-root refusal, got \(String(describing: error))")
+                continue
+            }
+            XCTAssertEqual(rejectedURL.path, root.path)
+        }
     }
 
     func testKnownRootMustEqualCandidate() throws {
@@ -237,10 +260,17 @@ final class CleanupValidatorTests: XCTestCase {
             item: item(url: root, validation: .knownRoot(root)),
             scanRoot: temp.url
         ))
-        XCTAssertEqual(
-            validator.validate(item: item(url: child, validation: .knownRoot(root)), scanRoot: temp.url),
-            .unknownRoot(root)
-        )
+        for isDirectory in [false, true] {
+            let cacheRoot = URL(fileURLWithPath: root.path, isDirectory: isDirectory)
+            let error = validator.validate(
+                item: item(url: child, validation: .knownRoot(cacheRoot)), scanRoot: temp.url
+            )
+            guard case .unknownRoot(let rejectedURL)? = error else {
+                XCTFail("Expected unknown-root refusal, got \(String(describing: error))")
+                continue
+            }
+            XCTAssertEqual(rejectedURL.path, root.path)
+        }
     }
 
     func testKnownRootRefusesXcodeRoots() throws {
