@@ -5,6 +5,7 @@
 
   <p>
     <a href="https://github.com/onurergut/sw33p/actions/workflows/ci.yml"><img src="https://github.com/onurergut/sw33p/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build and test workflow"></a>
+    <a href="https://github.com/onurergut/sw33p/releases/latest"><img src="https://img.shields.io/github/v/release/onurergut/sw33p?label=release" alt="Latest release"></a>
     <img src="https://img.shields.io/badge/platform-macOS%2014%2B-blue" alt="Requires macOS 14 or later">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license"></a>
   </p>
@@ -12,9 +13,10 @@
 
 ---
 
-**Status:** private development preview, **0.1.0**. No GitHub Release has been
-published yet. Apple Silicon and Intel build 2 packages have been Developer
-ID-signed and notarized locally; those ZIPs are not included in this repository.
+**Status:** v0.1.0, first public release. Apple Silicon and Intel builds are
+Developer ID-signed and notarized by Apple. Expect the scan rules and the UI to
+change in 0.1.x releases; the safety contract in
+[`docs/SAFETY.md`](docs/SAFETY.md) is the part that should not.
 
 sw33p finds build output, dependencies, and package-manager caches under a folder
 you choose. It groups results by category and project, shows allocated disk
@@ -37,11 +39,20 @@ Windows or Linux. Use the relevant tool's own commands for those jobs.
 
 ## Install
 
-**To run:** macOS 14 or later. **To build:** Xcode command line tools with
-Swift 6. Homebrew is optional, not a dependency.
+Download the ZIP for your Mac from the
+[latest release](https://github.com/onurergut/sw33p/releases/latest):
 
-Until a release is published, build from source. This private repository
-requires GitHub access:
+- **Apple Silicon** → `sw33p-0.1.0-apple-silicon.zip`
+- **Intel** → `sw33p-0.1.0-intel.zip`
+
+Unzip in Finder, drag **sw33p.app** to Applications, and open it. Each ZIP has a
+matching `.sha256` file. Releases are Developer ID-signed with the hardened
+runtime and notarized by Apple, so Gatekeeper opens them without a warning.
+
+**Requirements:** macOS 14 or later. Homebrew is optional; if installed, its
+cache appears in the scan.
+
+To build from source instead, you need the Xcode command line tools with Swift 6:
 
 ```sh
 git clone https://github.com/onurergut/sw33p.git
@@ -49,17 +60,8 @@ cd sw33p
 swift run sw33p
 ```
 
-This launches the SwiftUI app. To run the test suite instead:
-
-```sh
-swift test
-```
-
-If you received a signed release ZIP separately, extract it in Finder and move
-**sw33p.app** to Applications. Choose `sw33p-0.1.0-apple-silicon.zip` for an
-Apple Silicon Mac, or `sw33p-0.1.0-intel.zip` for an Intel Mac.
-
-Build, signing, and notarization instructions:
+That launches the SwiftUI app. Run the tests with `swift test`. Build, signing,
+and notarization steps are in
 [CONTRIBUTING.md](CONTRIBUTING.md#release-builds).
 
 ## Use

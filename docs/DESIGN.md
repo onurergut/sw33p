@@ -243,7 +243,7 @@ One window, minimum 820 x 560.
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ [📁 /Users/onur]  [Change…]      [Scan]   Age: 90+ days ▾    │
+│ [📁 ~/Projects]  [Change…]      [Scan]   Age: 90+ days ▾    │
 ├──────────────┬───────────────────────────────────────────────┤
 │ All     4.2G │ ▾ node_modules            1.8 GB   12 items   │
 │ node_modules │   ~/dev/site-a           92 days   1.2 GB     │
